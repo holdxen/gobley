@@ -53,6 +53,7 @@ if (ext.propertyIsTrue("gobley.projects.uniffiTests")) {
     include(":tests:uniffi:large-enum")
     include(":tests:uniffi:large-error")
     include(":tests:uniffi:proc-macro")
+    include(":tests:uniffi:set-and-box")
     include(":tests:uniffi:simple-fns")
     include(":tests:uniffi:simple-iface")
     include(":tests:uniffi:struct-default-values")

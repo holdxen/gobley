@@ -1,0 +1,16 @@
+[package]
+name = "gobley-fixture-set-and-box"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "gobley_fixture_set_and_box"
+crate-type = ["cdylib", "staticlib"]
+path = "src/commonMain/rust/lib.rs"
+
+[dependencies]
+uniffi = { workspace = true }
+
+[build-dependencies]
+gobley-fixture-build-common = { path = "../../build-common" }

@@ -33,6 +33,7 @@ members = [
     "tests/uniffi/large-enum",
     "tests/uniffi/large-error",
     "tests/uniffi/proc-macro",
+    "tests/uniffi/set-and-box",
     "tests/uniffi/simple-fns",
     "tests/uniffi/simple-iface",
     "tests/uniffi/struct-default-values",

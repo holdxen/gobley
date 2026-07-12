@@ -24,6 +24,10 @@
      */
     {{ visibility() }}actual constructor(noHandle: NoHandle)
 
+    {{ visibility() }}actual constructor(withHandle: UniffiWithHandle, handle: Long) : this(NoHandle) {
+        TODO()
+    }
+
     {%- match obj.primary_constructor() %}
     {%- when Some(cons) %}
     {%-     if cons.is_async() %}
@@ -31,7 +35,7 @@
     {%-     else %}
     {%- call kt::docstring(cons, 4) %}{% endcall %}
 
-    {{ visibility() }}actual constructor({% call kt::arg_list(cons, false) -%}{%- endcall %}) : this(UniffiWithHandle, {% call kt::to_ffi_call(cons, 8) %}{% endcall %}) {
+    {{ visibility() }}actual constructor({% call kt::arg_list(cons, false) -%}{%- endcall %}) : this(NoHandle) {
         TODO()
     }
     {%-     endif %}
