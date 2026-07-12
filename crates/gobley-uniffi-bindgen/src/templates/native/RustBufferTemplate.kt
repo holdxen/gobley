@@ -12,7 +12,7 @@
     get() = pointed.data
     set(value) { pointed.data = value?.reinterpret() }
 {{ visibility() }}fun RustBuffer.asByteBuffer(): ByteBuffer? {
-    {% call kt::check_rust_buffer_length("pointed.len") %}
+    {% call kt::check_rust_buffer_length("pointed.len") %}{% endcall %}
     return ByteBuffer(
         pointed.data?.reinterpret<kotlinx.cinterop.ByteVar>() ?: return null,
         pointed.len.toInt(),
@@ -38,7 +38,7 @@
 {{ visibility() }}val RustBufferByValue.data: Pointer?
     get() = useContents { data }
 {{ visibility() }}fun RustBufferByValue.asByteBuffer(): ByteBuffer? {
-    {% call kt::check_rust_buffer_length("len") %}
+    {% call kt::check_rust_buffer_length("len") %}{% endcall %}
     return ByteBuffer(
         data?.reinterpret<kotlinx.cinterop.ByteVar>() ?: return null,
         len.toInt(),

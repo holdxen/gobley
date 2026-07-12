@@ -13,13 +13,14 @@
 {%- endmacro %}
 
 {%- macro to_ffi_call(func, indent) -%}
-                        {%- if func.takes_self() -%}
+                        {%- match func.self_type() %}
+                        {%- when Some(Type::Object { .. }) %}
                         callWithPointer {
-{{ " "|repeat(indent) }}    {% call to_raw_ffi_call(func, indent + 4) %}
+{{ " "|repeat(indent) }}    {% call to_raw_ffi_call(func, indent + 4) %}{% endcall %}
 {{ " "|repeat(indent) }}{{ '}' }}
                         {%- else -%}
-                        {%- call to_raw_ffi_call(func, indent) -%}
-                        {%- endif -%}
+                        {%- call to_raw_ffi_call(func, indent) -%}{%- endcall %}
+                        {%- endmatch -%}
 {%- endmacro %}
 
 {%- macro to_raw_ffi_call(func, indent) -%}
@@ -30,10 +31,14 @@
                         uniffiRustCall
                         {%- endmatch %} { uniffiRustCallStatus ->
 {{ " "|repeat(indent) }}    UniffiLib.{{ func.ffi_func().name() }}(
-                                {%- if func.takes_self() %}
+                                {%- match func.self_type() %}
+                                {%- when Some(Type::Object { .. }) %}
 {{ " "|repeat(indent) }}        it,
-                                {%- endif -%}
-                                {%- call arg_list_lowered(func, indent + 8) %}
+                                {%- when Some(t) %}
+{{ " "|repeat(indent) }}        {{- t|lower_fn }}(this),
+                                {%- when None %}
+                                {%- endmatch -%}
+                                {%- call arg_list_lowered(func, indent + 8) %}{% endcall %}
 {{ " "|repeat(indent) }}        uniffiRustCallStatus,
 {{ " "|repeat(indent) }}    )
                         {%- if let Some(return_type) = func.ffi_func().return_type() -%}
@@ -48,7 +53,7 @@
 {%- endmacro -%}
 
 {%- macro func_decl(func_decl, callable, indent, is_decl_override) %}
-                        {%- call docstring(callable, indent) -%}
+                        {%- call docstring(callable, indent) -%}{%- endcall %}
                         {%- match callable.throws_type() -%}
                         {%-     when Some(throwable) %}
 {{ " "|repeat(indent) }}@Throws({{ throwable|type_name(ci) }}::class {%- if callable.is_async() -%}, kotlin.coroutines.cancellation.CancellationException::class{%- endif -%})
@@ -57,7 +62,7 @@
 {{ " "|repeat(indent) }}{{ visibility() }}{% if func_decl.len() != 0 -%}{{ func_decl }} {% endif -%}
                         {%- if callable.is_async() -%}suspend {% endif -%}
                         fun {{ callable.name()|fn_name }}(
-                            {%- call arg_list(callable, is_decl_override || !callable.takes_self()) -%}
+                            {%- call arg_list(callable, is_decl_override || callable.self_type().is_none()) -%}{%- endcall %}
                         )
                         {%- match callable.return_type() -%}
                         {%-     when Some(return_type) %}: {{ return_type|type_name(ci) -}}
@@ -66,7 +71,7 @@
 {% endmacro %}
 
 {%- macro func_decl_with_body(func_decl, callable, indent) %}
-                        {%- call docstring(callable, indent) -%}
+                        {%- call docstring(callable, indent) -%}{%- endcall %}
                         {%- match callable.throws_type() -%}
                         {%-     when Some(throwable) %}
 {{ " "|repeat(indent) }}@Throws({{ throwable|type_name(ci) }}::class {%- if callable.is_async() -%}, kotlin.coroutines.cancellation.CancellationException::class{%- endif -%})
@@ -75,31 +80,31 @@
 {{ " "|repeat(indent) }}{{ visibility() }}{% if func_decl.len() != 0 -%}{{ func_decl }} {% endif -%}
                         {%- if callable.is_async() -%}suspend {% endif -%}
                         fun {{ callable.name()|fn_name }}(
-                            {%- call arg_list(callable, false) -%}
+                            {%- call arg_list(callable, false) -%}{%- endcall %}
                         )
                         {%- match callable.return_type() -%}
                         {%-     when Some(return_type) %}: {{ return_type|type_name(ci) -}}
                         {%-     else -%}
                         {%- endmatch %} {
                             {%- if callable.is_async() %}
-{{ " "|repeat(indent) }}    return {% call call_async(callable, indent + 4) -%}
+{{ " "|repeat(indent) }}    return {% call call_async(callable, indent + 4) -%}{%- endcall %}
                             {%- else -%}
                             {%- match callable.return_type() -%}
                             {%-     when Some(return_type) %}
-{{ " "|repeat(indent) }}    return {{ return_type|lift_fn }}({%- call to_ffi_call(callable, indent + 4) -%})
+{{ " "|repeat(indent) }}    return {{ return_type|lift_fn }}({%- call to_ffi_call(callable, indent + 4) -%}{%- endcall %})
                             {%-     else %}
-{{ " "|repeat(indent) }}    {% call to_ffi_call(callable, indent + 4) -%}
+{{ " "|repeat(indent) }}    {% call to_ffi_call(callable, indent + 4) -%}{%- endcall %}
                             {%- endmatch %}
                             {%- endif %}
 {{ " "|repeat(indent) }}{{ '}' }}
 {% endmacro %}
 
 {%- macro func_decl_with_stub(func_decl, callable, indent) %}
-                        {%- call docstring(callable, indent) %}
+                        {%- call docstring(callable, indent) %}{% endcall %}
 {{ " "|repeat(indent) }}{{ visibility() }}{% if func_decl.len() != 0 -%}{{ func_decl }} {% endif -%}
                         {%- if callable.is_async() -%}suspend {% endif -%}
                         fun {{ callable.name()|fn_name }}(
-                            {%- call arg_list(callable, false) -%}
+                            {%- call arg_list(callable, false) -%}{%- endcall %}
                         )
                         {%- match callable.return_type() -%}
                         {%-     when Some(return_type) %}: {{ return_type|type_name(ci) -}}
@@ -111,18 +116,19 @@
 
 {%- macro call_async(callable, indent) -%}
                         uniffiRustCallAsync(
-                            {%- if callable.takes_self() %}
+                            {%- match callable.self_type() %}
+                            {%- when Some(Type::Object { .. }) %}
 {{ " "|repeat(indent) }}    callWithPointer { thisPtr ->
 {{ " "|repeat(indent) }}        UniffiLib.{{ callable.ffi_func().name() }}(
 {{ " "|repeat(indent) }}            thisPtr,
-                                    {%- call arg_list_lowered(callable, indent + 12) %}
+                                    {%- call arg_list_lowered(callable, indent + 12) %}{% endcall %}
 {{ " "|repeat(indent) }}        )
 {{ " "|repeat(indent) }}    },
                             {%- else %}
 {{ " "|repeat(indent) }}    UniffiLib.{{ callable.ffi_func().name() }}(
-                                {%- call arg_list_lowered(callable, indent + 8) %}
+                                {%- call arg_list_lowered(callable, indent + 8) %}{% endcall %}
 {{ " "|repeat(indent) }}    ),
-                            {%- endif %}
+                            {%- endmatch %}
 {{ " "|repeat(indent) }}    {{ callable|async_poll(ci) }},
 {{ " "|repeat(indent) }}    {{ callable|async_complete(ci) }},
 {{ " "|repeat(indent) }}    {{ callable|async_free(ci) }},
@@ -223,7 +229,7 @@ v{{- field_num -}}
 {%- macro destroy_fields(member, indent) %}
 {{ " "|repeat(indent) }}Disposable.destroy(
                             {%- for field in member.fields() %}
-{{ " "|repeat(indent) }}    this.{%- call field_name(field, loop.index) -%},
+{{ " "|repeat(indent) }}    this.{%- call field_name(field, loop.index) -%}{%- endcall %},
                             {%- endfor %}
 {{ " "|repeat(indent) }})
 {%- endmacro -%}
@@ -240,30 +246,30 @@ v{{- field_num -}}
                             {%-     for field in data_class.fields() %}
                             {%-         match field|as_data_class_field_type -%}
                             {%-             when DataClassFieldType::Bytes %}
-{{ " "|repeat(indent) }}    return {% call field_name(field, loop.index) %}.contentEquals(other.{% call field_name(field, loop.index) %})
+{{ " "|repeat(indent) }}    return {% call field_name(field, loop.index) %}{% endcall %}.contentEquals(other.{% call field_name(field, loop.index) %}{% endcall %})
                             {%-             when DataClassFieldType::NullableBytes %}
-{{ " "|repeat(indent) }}    if ({% call field_name(field, loop.index) %} != null) {
-{{ " "|repeat(indent) }}        if (other.{% call field_name(field, loop.index) %} == null) return false
-{{ " "|repeat(indent) }}        if (!{% call field_name(field, loop.index) %}.contentEquals(other.{% call field_name(field, loop.index) %})) return false
+{{ " "|repeat(indent) }}    if ({% call field_name(field, loop.index) %}{% endcall %} != null) {
+{{ " "|repeat(indent) }}        if (other.{% call field_name(field, loop.index) %}{% endcall %} == null) return false
+{{ " "|repeat(indent) }}        if (!{% call field_name(field, loop.index) %}{% endcall %}.contentEquals(other.{% call field_name(field, loop.index) %}{% endcall %})) return false
 {{ " "|repeat(indent) }}    }
 
 {{ " "|repeat(indent) }}    return true
                             {%-             else %}
-{{ " "|repeat(indent) }}    return {% call field_name(field, loop.index) %} == other.{% call field_name(field, loop.index) %}
+{{ " "|repeat(indent) }}    return {% call field_name(field, loop.index) %}{% endcall %} == other.{% call field_name(field, loop.index) %}{% endcall %}
                             {%-         endmatch -%}
                             {%-     endfor -%}
                             {%- else -%}
                             {%-     for field in data_class.fields() -%}
                             {%-         match field|as_data_class_field_type -%}
                             {%-             when DataClassFieldType::Bytes %}
-{{ " "|repeat(indent) }}    if (!{% call field_name(field, loop.index) %}.contentEquals(other.{% call field_name(field, loop.index) %})) return false
+{{ " "|repeat(indent) }}    if (!{% call field_name(field, loop.index) %}{% endcall %}.contentEquals(other.{% call field_name(field, loop.index) %}{% endcall %})) return false
                             {%-             when DataClassFieldType::NullableBytes %}
-{{ " "|repeat(indent) }}    if ({% call field_name(field, loop.index) %} != null) {
-{{ " "|repeat(indent) }}        if (other.{% call field_name(field, loop.index) %} == null) return false
-{{ " "|repeat(indent) }}        if (!{% call field_name(field, loop.index) %}.contentEquals(other.{% call field_name(field, loop.index) %})) return false
+{{ " "|repeat(indent) }}    if ({% call field_name(field, loop.index) %}{% endcall %} != null) {
+{{ " "|repeat(indent) }}        if (other.{% call field_name(field, loop.index) %}{% endcall %} == null) return false
+{{ " "|repeat(indent) }}        if (!{% call field_name(field, loop.index) %}{% endcall %}.contentEquals(other.{% call field_name(field, loop.index) %}{% endcall %})) return false
 {{ " "|repeat(indent) }}    }
                             {%-             else %}
-{{ " "|repeat(indent) }}    if ({% call field_name(field, loop.index) %} != other.{% call field_name(field, loop.index) %}) return false
+{{ " "|repeat(indent) }}    if ({% call field_name(field, loop.index) %}{% endcall %} != other.{% call field_name(field, loop.index) %}{% endcall %}) return false
                             {%-         endmatch -%}
                             {%-     endfor %}
 
@@ -283,13 +289,13 @@ v{{- field_num -}}
                             {%-     endif -%}
                             {%-     match field|as_data_class_field_type -%}
                             {%-         when DataClassFieldType::Bytes -%}
-                            {% call field_name(field, loop.index) %}.contentHashCode()
+                            {% call field_name(field, loop.index) %}{% endcall %}.contentHashCode()
                             {%-         when DataClassFieldType::NullableBytes -%}
-                            ({% call field_name(field, loop.index) %}?.contentHashCode() ?: 0)
+                            ({% call field_name(field, loop.index) %}{% endcall %}?.contentHashCode() ?: 0)
                             {%-         when DataClassFieldType::NonNullableNonBytes -%}
-                            {% call field_name(field, loop.index) %}.hashCode()
+                            {% call field_name(field, loop.index) %}{% endcall %}.hashCode()
                             {%-         when DataClassFieldType::NullableNonBytes -%}
-                            ({% call field_name(field, loop.index) %}?.hashCode() ?: 0)
+                            ({% call field_name(field, loop.index) %}{% endcall %}?.hashCode() ?: 0)
                             {%-     endmatch -%}
                             {%- endfor -%}
                             {%- if data_class.fields().len() > 1 %}
@@ -307,5 +313,5 @@ v{{- field_num -}}
 {%- endmacro %}
 
 {%- macro docstring(defn, indent_spaces) %}
-{%- call docstring_value(defn.docstring(), indent_spaces) %}
+{%- call docstring_value(defn.docstring(), indent_spaces) %}{% endcall %}
 {%- endmacro %}

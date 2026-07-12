@@ -1,11 +1,6 @@
 
 // Define FFI callback types
-{%- let lib_private_fun_indent %}
-{%- if config.enable_jna_interface_mapping() %}
-    {%- let lib_private_fun_indent = 8 %}
-{%- else %}
-    {%- let lib_private_fun_indent = 4 %}
-{%- endif %}
+{%- let lib_private_fun_indent = self.lib_private_fun_indent() %}
 {%- let dynamic_library_dependencies = config.dynamic_library_dependencies(module_name) %}
 {%- for def in ci.ffi_definitions() %}
 {%- match def %}
@@ -258,7 +253,7 @@ internal object IntegrityCheckingUniffiLib : Library {
     @JvmStatic
     external fun
     {%- endif %} {{ func.name() }}(
-        {%- call kt::arg_list_ffi_decl(func, 8) %}
+        {%- call kt::arg_list_ffi_decl(func, 8) %}{% endcall %}
     ): {% match func.return_type() %}{% when Some(return_type) %}{{ return_type.borrow()|ffi_type_name_by_value(ci) }}{% when None %}Unit{% endmatch %}
     {%- endfor %}
 }
@@ -329,7 +324,7 @@ internal object UniffiLib : Library {
     @JvmStatic
     external fun
     {%- endif %} {{ func.name() }}(
-        {%- call kt::arg_list_ffi_decl(func, 8) %}
+        {%- call kt::arg_list_ffi_decl(func, 8) %}{% endcall %}
     ): {% match func.return_type() %}{% when Some(return_type) %}{{ return_type.borrow()|ffi_type_name_by_value(ci) }}{% when None %}Unit{% endmatch %}
     {%- endfor %}
 }

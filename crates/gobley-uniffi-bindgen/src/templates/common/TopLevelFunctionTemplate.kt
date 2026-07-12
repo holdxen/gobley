@@ -1,1 +1,1 @@
-{%- call kt::func_decl("expect", func, 0, false) -%}
+{%- call kt::func_decl("expect", func, 0, false) -%}{%- endcall %}

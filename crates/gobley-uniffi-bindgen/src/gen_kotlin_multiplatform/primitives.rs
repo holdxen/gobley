@@ -5,12 +5,11 @@
  */
 
 use anyhow::{bail, Result};
-use uniffi_bindgen::backend::Literal;
-use uniffi_bindgen::interface::{ComponentInterface, Radix, Type};
+use uniffi_bindgen::interface::{ComponentInterface, DefaultValue, Literal, Radix, Type};
 
 use super::{CodeType, Config};
 
-fn render_literal(literal: &Literal, _ci: &ComponentInterface) -> Result<String> {
+fn render_literal(literal: &DefaultValue, _ci: &ComponentInterface) -> Result<String> {
     fn typed_number(type_: &Type, num_str: String) -> Result<String> {
         let unwrapped_type = match type_ {
             Type::Optional { inner_type } => inner_type,
@@ -31,27 +30,29 @@ fn render_literal(literal: &Literal, _ci: &ComponentInterface) -> Result<String>
     }
 
     match literal {
-        Literal::Boolean(v) => Ok(format!("{v}")),
-        Literal::String(s) => Ok(format!("\"{s}\"")),
-        Literal::Int(i, radix, type_) => typed_number(
-            type_,
-            match radix {
-                Radix::Octal => format!("{i:#x}"),
-                Radix::Decimal => format!("{i}"),
-                Radix::Hexadecimal => format!("{i:#x}"),
-            },
-        ),
-        Literal::UInt(i, radix, type_) => typed_number(
-            type_,
-            match radix {
-                Radix::Octal => format!("{i:#x}"),
-                Radix::Decimal => format!("{i}"),
-                Radix::Hexadecimal => format!("{i:#x}"),
-            },
-        ),
-        Literal::Float(string, type_) => typed_number(type_, string.clone()),
-
-        _ => bail!("Invalid literal: {literal:?}"),
+        DefaultValue::Literal(lit) => match lit {
+            Literal::Boolean(v) => Ok(format!("{v}")),
+            Literal::String(s) => Ok(format!("\"{s}\"")),
+            Literal::Int(i, radix, type_) => typed_number(
+                type_,
+                match radix {
+                    Radix::Octal => format!("{i:#x}"),
+                    Radix::Decimal => format!("{i}"),
+                    Radix::Hexadecimal => format!("{i:#x}"),
+                },
+            ),
+            Literal::UInt(i, radix, type_) => typed_number(
+                type_,
+                match radix {
+                    Radix::Octal => format!("{i:#x}"),
+                    Radix::Decimal => format!("{i}"),
+                    Radix::Hexadecimal => format!("{i:#x}"),
+                },
+            ),
+            Literal::Float(string, type_) => typed_number(type_, string.clone()),
+            _ => bail!("Invalid literal: {lit:?}"),
+        },
+        DefaultValue::Default => Ok("Default".to_string()),
     }
 }
 
@@ -71,7 +72,7 @@ macro_rules! impl_code_type_for_primitive {
 
             fn literal(
                 &self,
-                literal: &Literal,
+                literal: &DefaultValue,
                 ci: &ComponentInterface,
                 _config: &Config,
             ) -> Result<String> {

@@ -384,6 +384,7 @@ pub trait SayAfterTrait: Send + Sync {
 }
 
 // Example of async trait defined in the UDL file
+#[uniffi::trait_interface]
 #[async_trait::async_trait]
 pub trait SayAfterUdlTrait: Send + Sync {
     async fn say_after(&self, ms: u16, who: String) -> String;
@@ -432,7 +433,7 @@ fn get_say_after_udl_traits() -> Vec<Arc<dyn SayAfterUdlTrait>> {
 }
 
 // Async callback interface implemented in foreign code
-#[uniffi::export(with_foreign)]
+#[uniffi::export(rust, foreign)]
 #[async_trait::async_trait]
 pub trait AsyncParser: Send + Sync {
     // Simple async method

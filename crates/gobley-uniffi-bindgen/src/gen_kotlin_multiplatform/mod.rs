@@ -12,7 +12,6 @@ use std::fmt::Debug;
 
 use anyhow::{anyhow, bail, Context, Result};
 use askama::Template;
-use filters::header_escape_name;
 use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToUpperCamelCase};
 use serde::{Deserialize, Serialize};
 use uniffi_bindgen::interface::*;
@@ -58,7 +57,7 @@ trait CodeType: Debug {
 
     fn literal(
         &self,
-        literal: &Literal,
+        literal: &DefaultValue,
         ci: &ComponentInterface,
         config: &Config,
     ) -> Result<String> {
@@ -439,6 +438,22 @@ macro_rules! kotlin_type_renderer {
                     Some(Visibility::Internal) => "internal ",
                 }
             }
+
+            fn actual_keyword(&self) -> &str {
+                if self.config.kotlin_multiplatform {
+                    "actual"
+                } else {
+                    ""
+                }
+            }
+
+            fn actual_override_keyword(&self) -> &str {
+                if self.config.kotlin_multiplatform {
+                    "actual override"
+                } else {
+                    "override"
+                }
+            }
         }
     };
 }
@@ -514,6 +529,14 @@ macro_rules! kotlin_wrapper {
                     None => "",
                     Some(Visibility::Public) => "public ",
                     Some(Visibility::Internal) => "internal ",
+                }
+            }
+
+            fn lib_private_fun_indent(&self) -> i32 {
+                if self.config.enable_jna_interface_mapping() {
+                    8
+                } else {
+                    4
                 }
             }
         }
@@ -628,7 +651,7 @@ impl KotlinCodeOracle {
 
     /// `var_name` without the backticks.  Useful for using in `@Structure.FieldOrder`.
     pub fn var_name_raw(&self, nm: &str) -> String {
-        header_escape_name(&nm.to_lower_camel_case()).unwrap()
+        header_escape_name_inner(&nm.to_lower_camel_case())
     }
 
     /// Get the idiomatic Kotlin rendering of an individual enum variant.
@@ -694,8 +717,7 @@ impl KotlinCodeOracle {
             FfiType::UInt64 | FfiType::Int64 => "0.toLong()".to_owned(),
             FfiType::Float32 => "0.0f".to_owned(),
             FfiType::Float64 => "0.0".to_owned(),
-            // NOTE: NullPointer is the same as Pointer.NULL
-            FfiType::RustArcPtr(_) => "NullPointer".to_owned(),
+            FfiType::Handle => "0L".to_owned(),
             FfiType::RustBuffer(_) => "RustBufferHelper.allocValue()".to_owned(),
             FfiType::Callback(_) => "null".to_owned(),
             FfiType::RustCallStatus => "UniffiRustCallStatusHelper.allocValue()".to_owned(),
@@ -715,7 +737,7 @@ impl KotlinCodeOracle {
             | FfiType::UInt64
             | FfiType::Float32
             | FfiType::Float64 => format!("{}ByReference", self.ffi_type_label(ffi_type, ci)),
-            FfiType::RustArcPtr(_) => "PointerByReference".to_owned(),
+            FfiType::Handle => "LongByReference".to_owned(),
             // JNA structs default to ByReference
             FfiType::RustBuffer(_) | FfiType::Struct(_) => self.ffi_type_label(ffi_type, ci),
             _ => panic!("{ffi_type:?} by reference is not implemented"),
@@ -738,7 +760,7 @@ impl KotlinCodeOracle {
             | FfiType::UInt64
             | FfiType::Float32
             | FfiType::Float64 => format!("{}ByReference", self.ffi_type_label(ffi_type, ci)),
-            FfiType::RustArcPtr(_) => "PointerByReference".to_owned(),
+            FfiType::Handle => "LongByReference".to_owned(),
             // JNA structs default to ByReference
             FfiType::RustBuffer(_) | FfiType::Struct(_) => self.ffi_type_label(ffi_type, ci),
             _ => panic!("{ffi_type:?} by reference is not implemented"),
@@ -761,7 +783,7 @@ impl KotlinCodeOracle {
             | FfiType::UInt64
             | FfiType::Float32
             | FfiType::Float64 => format!("{} const *", self.ffi_type_label_header(ffi_type, ci)),
-            FfiType::RustArcPtr(_) => "void * const *".to_owned(),
+            FfiType::Handle => "int64_t const *".to_owned(),
             // JNA structs default to ByReference
             FfiType::RustBuffer(_) | FfiType::Struct(_) => {
                 format!("{} const *", self.ffi_type_label_header(ffi_type, ci))
@@ -786,7 +808,7 @@ impl KotlinCodeOracle {
             | FfiType::UInt64
             | FfiType::Float32
             | FfiType::Float64 => format!("{} *", self.ffi_type_label_header(ffi_type, ci)),
-            FfiType::RustArcPtr(_) => "void **".to_owned(),
+            FfiType::Handle => "int64_t *".to_owned(),
             // JNA structs default to ByReference
             FfiType::RustBuffer(_) | FfiType::Struct(_) => {
                 format!("{} *", self.ffi_type_label_header(ffi_type, ci))
@@ -807,7 +829,6 @@ impl KotlinCodeOracle {
             FfiType::Float32 => "Float".to_string(),
             FfiType::Float64 => "Double".to_string(),
             FfiType::Handle => "Long".to_string(),
-            FfiType::RustArcPtr(_) => "Pointer?".to_string(),
             FfiType::RustBuffer(maybe_external) => match maybe_external {
                 Some(external_meta) if external_meta.module_path != ci.crate_name() => {
                     format!("RustBuffer{}", external_meta.name)
@@ -836,7 +857,6 @@ impl KotlinCodeOracle {
             FfiType::Float32 => "float".to_string(),
             FfiType::Float64 => "double".to_string(),
             FfiType::Handle => "int64_t".to_string(),
-            FfiType::RustArcPtr(_) => "void *".to_string(),
             FfiType::RustBuffer(maybe_external) => match maybe_external {
                 Some(external_meta) if external_meta.module_path != ci.crate_name() => {
                     format!("RustBuffer{}", external_meta.name)
@@ -914,6 +934,12 @@ impl<T: AsType> AsCodeType for T {
                 value_type,
             } => Box::new(compounds::MapCodeType::new(*key_type, *value_type)),
             Type::Custom { name, .. } => Box::new(custom::CustomCodeType::new(name)),
+            Type::Set { inner_type } => {
+                Box::new(compounds::SequenceCodeType::new(*inner_type))
+            }
+            Type::Box { inner_type } => {
+                Box::new(compounds::OptionalCodeType::new(*inner_type))
+            }
         }
     }
 }
@@ -926,53 +952,107 @@ pub enum DataClassFieldType {
     NullableNonBytes,
 }
 
+fn header_escape_name_inner(nm: &str) -> String {
+    if CPP_KEYWORDS.contains(&nm) {
+        format!("{nm}_")
+    } else {
+        nm.to_owned()
+    }
+}
+
+fn as_data_class_field_type_inner(as_ct: &impl AsType) -> DataClassFieldType {
+    fn as_bytes_field_type_inner(type_: &Type) -> DataClassFieldType {
+        match type_ {
+            Type::Bytes => DataClassFieldType::Bytes,
+            Type::Optional { inner_type } => match as_bytes_field_type_inner(inner_type) {
+                DataClassFieldType::Bytes | DataClassFieldType::NullableBytes => {
+                    DataClassFieldType::NullableBytes
+                }
+                DataClassFieldType::NonNullableNonBytes
+                | DataClassFieldType::NullableNonBytes => DataClassFieldType::NullableNonBytes,
+            },
+            _ => DataClassFieldType::NonNullableNonBytes,
+        }
+    }
+    as_bytes_field_type_inner(&as_ct.as_type())
+}
+
 mod filters {
-    pub use uniffi_bindgen::backend::filters::*;
-    use uniffi_bindgen::{backend::filters::to_askama_error, interface::ffi::ExternalFfiMetadata};
+    use uniffi_bindgen::{interface::ffi::ExternalFfiMetadata, to_askama_error};
     use uniffi_meta::LiteralMetadata;
     use variant::VariantCodeType;
 
     use super::*;
 
+    #[askama::filter_fn]
+    pub(super) fn ffi_type(
+        as_ct: &impl AsType,
+        _: &dyn askama::Values,
+    ) -> Result<FfiType, askama::Error> {
+        Ok(FfiType::from(as_ct.as_type()))
+    }
+
+    #[askama::filter_fn]
     pub(super) fn type_name(
         as_ct: &impl AsCodeType,
+        _: &dyn askama::Values,
         ci: &ComponentInterface,
     ) -> Result<String, askama::Error> {
         Ok(as_ct.as_codetype().type_label(ci))
     }
 
     // Workaround problem with impl AsCodeType for &Variant (see variant.rs).
+    #[askama::filter_fn]
     pub fn variant_type_name(
         v: &Variant,
+        _: &dyn askama::Values,
         ci: &ComponentInterface,
     ) -> Result<String, askama::Error> {
         Ok(VariantCodeType { v: v.clone() }.type_label(ci))
     }
 
-    pub(super) fn canonical_name(as_ct: &impl AsCodeType) -> Result<String, askama::Error> {
+    #[askama::filter_fn]
+    pub(super) fn canonical_name(
+        as_ct: &impl AsCodeType,
+        _: &dyn askama::Values,
+    ) -> Result<String, askama::Error> {
         Ok(as_ct.as_codetype().canonical_name())
     }
 
-    pub(super) fn ffi_converter_name(as_ct: &impl AsCodeType) -> Result<String, askama::Error> {
+    #[askama::filter_fn]
+    pub(super) fn ffi_converter_name(
+        as_ct: &impl AsCodeType,
+        _: &dyn askama::Values,
+    ) -> Result<String, askama::Error> {
         Ok(as_ct.as_codetype().ffi_converter_name())
     }
 
-    pub(super) fn lower_fn(as_ct: &impl AsCodeType) -> Result<String, askama::Error> {
+    #[askama::filter_fn]
+    pub(super) fn lower_fn(
+        as_ct: &impl AsCodeType,
+        _: &dyn askama::Values,
+    ) -> Result<String, askama::Error> {
         Ok(format!(
             "{}.lower",
             as_ct.as_codetype().ffi_converter_name()
         ))
     }
 
-    pub(super) fn allocation_size_fn(as_ct: &impl AsCodeType) -> Result<String, askama::Error> {
+    #[askama::filter_fn]
+    pub(super) fn allocation_size_fn(
+        as_ct: &impl AsCodeType,
+        _: &dyn askama::Values,
+    ) -> Result<String, askama::Error> {
         Ok(format!(
             "{}.allocationSize",
             as_ct.as_codetype().ffi_converter_name()
         ))
     }
 
+    #[askama::filter_fn]
     pub(super) fn write_fn(
         as_ct: &impl AsType,
+        _: &dyn askama::Values,
         ci: &ComponentInterface,
     ) -> Result<String, askama::Error> {
         if let Some(external_type_name) = KotlinCodeOracle.as_external_type(ci, as_ct) {
@@ -988,20 +1068,34 @@ mod filters {
         }
     }
 
-    pub(super) fn lift_fn(as_ct: &impl AsCodeType) -> Result<String, askama::Error> {
+    #[askama::filter_fn]
+    pub(super) fn lift_fn(
+        as_ct: &impl AsCodeType,
+        _: &dyn askama::Values,
+    ) -> Result<String, askama::Error> {
         Ok(format!("{}.lift", as_ct.as_codetype().ffi_converter_name()))
     }
 
-    pub(super) fn as_ffi_type(as_ct: &impl AsType) -> Result<FfiType, askama::Error> {
+    #[askama::filter_fn]
+    pub(super) fn as_ffi_type(
+        as_ct: &impl AsType,
+        _: &dyn askama::Values,
+    ) -> Result<FfiType, askama::Error> {
         Ok(FfiType::from(as_ct.as_type()))
     }
 
-    pub(super) fn need_non_null_assertion(type_: &FfiType) -> Result<bool, askama::Error> {
-        Ok(matches!(type_, FfiType::RustArcPtr(_)))
+    #[askama::filter_fn]
+    pub(super) fn need_non_null_assertion(
+        type_: &FfiType,
+        _: &dyn askama::Values,
+    ) -> Result<bool, askama::Error> {
+        Ok(matches!(type_, FfiType::Handle))
     }
 
+    #[askama::filter_fn]
     pub(super) fn read_fn(
         as_ct: &impl AsType,
+        _: &dyn askama::Values,
         ci: &ComponentInterface,
     ) -> Result<String, askama::Error> {
         if let Some(external_type_name) = KotlinCodeOracle.as_external_type(ci, as_ct) {
@@ -1014,8 +1108,8 @@ mod filters {
         }
     }
 
-    pub fn render_literal(
-        literal: &Literal,
+    fn render_literal_inner(
+        literal: &DefaultValue,
         as_ct: &impl AsType,
         ci: &ComponentInterface,
         config: &Config,
@@ -1024,6 +1118,17 @@ mod filters {
             .as_codetype()
             .literal(literal, ci, config)
             .map_err(|e| to_askama_error(&e))
+    }
+
+    #[askama::filter_fn]
+    pub fn render_literal<T: AsType>(
+        literal: &DefaultValue,
+        _: &dyn askama::Values,
+        as_ct: &T,
+        ci: &ComponentInterface,
+        config: &Config,
+    ) -> Result<String, askama::Error> {
+        render_literal_inner(literal, as_ct, ci, config)
     }
 
     // Get the idiomatic Kotlin rendering of an integer.
@@ -1040,7 +1145,12 @@ mod filters {
     }
 
     // Get the idiomatic Kotlin rendering of an individual enum variant's discriminant
-    pub fn variant_discr_literal(e: &Enum, index: &usize) -> Result<String, askama::Error> {
+    #[askama::filter_fn]
+    pub fn variant_discr_literal(
+        e: &Enum,
+        _: &dyn askama::Values,
+        index: &usize,
+    ) -> Result<String, askama::Error> {
         let literal = e.variant_discr(*index).expect("invalid index");
         match literal {
             // Kotlin doesn't convert between signed and unsigned by default
@@ -1051,54 +1161,49 @@ mod filters {
         }
     }
 
-    pub fn should_generate_equals_hash_code_record(record: &Record) -> Result<bool, askama::Error> {
+    #[askama::filter_fn]
+    pub fn should_generate_equals_hash_code_record(
+        record: &Record,
+        _: &dyn askama::Values,
+    ) -> Result<bool, askama::Error> {
         Ok(record.fields().iter().any(|f| {
             matches!(
-                as_data_class_field_type(f),
-                Ok(DataClassFieldType::Bytes | DataClassFieldType::NullableBytes)
+                as_data_class_field_type_inner(f),
+                DataClassFieldType::Bytes | DataClassFieldType::NullableBytes
             )
         }))
     }
 
+    #[askama::filter_fn]
     pub fn should_generate_equals_hash_code_enum_variant(
         variant: &Variant,
+        _: &dyn askama::Values,
     ) -> Result<bool, askama::Error> {
         Ok(variant.fields().iter().any(|f| {
             matches!(
-                as_data_class_field_type(f),
-                Ok(DataClassFieldType::Bytes | DataClassFieldType::NullableBytes)
+                as_data_class_field_type_inner(f),
+                DataClassFieldType::Bytes | DataClassFieldType::NullableBytes
             )
         }))
     }
 
+    #[askama::filter_fn]
     pub fn as_data_class_field_type(
         as_ct: &impl AsType,
+        _: &dyn askama::Values,
     ) -> Result<DataClassFieldType, askama::Error> {
-        fn as_bytes_field_type_inner(type_: &Type) -> DataClassFieldType {
-            match type_ {
-                Type::Bytes => DataClassFieldType::Bytes,
-                Type::Optional { inner_type } => match as_bytes_field_type_inner(inner_type) {
-                    DataClassFieldType::Bytes | DataClassFieldType::NullableBytes => {
-                        DataClassFieldType::NullableBytes
-                    }
-                    DataClassFieldType::NonNullableNonBytes
-                    | DataClassFieldType::NullableNonBytes => DataClassFieldType::NullableNonBytes,
-                },
-                _ => DataClassFieldType::NonNullableNonBytes,
-            }
-        }
-        Ok(as_bytes_field_type_inner(&as_ct.as_type()))
+        Ok(as_data_class_field_type_inner(as_ct))
     }
 
     fn serializable_type(type_: &Type, ci: &ComponentInterface) -> Result<bool, askama::Error> {
         Ok(match type_ {
             Type::Object { .. } | Type::CallbackInterface { .. } => false,
-            Type::Record { name, .. } => serializable_record(
+            Type::Record { name, .. } => serializable_record_inner(
                 ci.get_record_definition(name)
                     .ok_or_else(|| to_askama_error(&format!("could not find record '{name}'")))?,
                 ci,
             )?,
-            Type::Enum { name, .. } => serializable_enum(
+            Type::Enum { name, .. } => serializable_enum_inner(
                 ci.get_enum_definition(name)
                     .ok_or_else(|| to_askama_error(&format!("could not find enum '{name}'")))?,
                 ci,
@@ -1116,7 +1221,7 @@ mod filters {
         })
     }
 
-    pub fn serializable_record(
+    fn serializable_record_inner(
         record: &Record,
         ci: &ComponentInterface,
     ) -> Result<bool, askama::Error> {
@@ -1128,7 +1233,7 @@ mod filters {
         Ok(true)
     }
 
-    pub fn serializable_enum(enum_: &Enum, ci: &ComponentInterface) -> Result<bool, askama::Error> {
+    fn serializable_enum_inner(enum_: &Enum, ci: &ComponentInterface) -> Result<bool, askama::Error> {
         if ci.is_name_used_as_error(enum_.name()) {
             return Ok(false);
         }
@@ -1143,14 +1248,14 @@ mod filters {
         // Unlike records or enum variants, if any of the variants are serializable, the
         // enum can be marked as serializable.
         for variant in enum_.variants() {
-            if serializable_enum_variant(variant, ci)? {
+            if serializable_enum_variant_inner(variant, ci)? {
                 return Ok(true);
             }
         }
         Ok(false)
     }
 
-    pub fn serializable_enum_variant(
+    fn serializable_enum_variant_inner(
         variant: &Variant,
         ci: &ComponentInterface,
     ) -> Result<bool, askama::Error> {
@@ -1162,22 +1267,51 @@ mod filters {
         Ok(true)
     }
 
+    #[askama::filter_fn]
+    pub fn serializable_record(
+        record: &Record,
+        _: &dyn askama::Values,
+        ci: &ComponentInterface,
+    ) -> Result<bool, askama::Error> {
+        serializable_record_inner(record, ci)
+    }
+
+    #[askama::filter_fn]
+    pub fn serializable_enum(enum_: &Enum, _: &dyn askama::Values, ci: &ComponentInterface) -> Result<bool, askama::Error> {
+        serializable_enum_inner(enum_, ci)
+    }
+
+    #[askama::filter_fn]
+    pub fn serializable_enum_variant(
+        variant: &Variant,
+        _: &dyn askama::Values,
+        ci: &ComponentInterface,
+    ) -> Result<bool, askama::Error> {
+        serializable_enum_variant_inner(variant, ci)
+    }
+
+    #[askama::filter_fn]
     pub fn ffi_type_name_by_value(
         type_: &FfiType,
+        _: &dyn askama::Values,
         ci: &ComponentInterface,
     ) -> Result<String, askama::Error> {
         Ok(KotlinCodeOracle.ffi_type_label_by_value(type_, ci))
     }
 
+    #[askama::filter_fn]
     pub fn ffi_type_name(
         type_: &FfiType,
+        _: &dyn askama::Values,
         ci: &ComponentInterface,
     ) -> Result<String, askama::Error> {
         Ok(KotlinCodeOracle.ffi_type_label(type_, ci))
     }
 
+    #[askama::filter_fn]
     pub fn ffi_as_callback(
         type_: &FfiType,
+        _: &dyn askama::Values,
         ci: &ComponentInterface,
     ) -> Result<Option<FfiCallbackFunction>, askama::Error> {
         let FfiType::Callback(callback_name) = type_ else {
@@ -1202,8 +1336,10 @@ mod filters {
     /// Kotlin/Native's cinterop ignores nullability of parameters of callback definitions in
     /// headers. We need to determine whether a callback pointer needs to be casted before being
     /// passed to a FFI function.
+    #[askama::filter_fn]
     pub fn ffi_callback_needs_casting_native(
         ffi_callback: &FfiCallbackFunction,
+        _: &dyn askama::Values,
     ) -> Result<bool, askama::Error> {
         Ok(ffi_callback.has_rust_call_status_arg()
             || ffi_callback.arguments().iter().any(|a| {
@@ -1218,8 +1354,10 @@ mod filters {
     }
 
     /// Convert a local RustBuffer to an external RustBuffer.
+    #[askama::filter_fn]
     pub fn ffi_cast_to_external_rust_buffer_if_needed(
         type_: &FfiType,
+        _: &dyn askama::Values,
         ci: &ComponentInterface,
     ) -> Result<String, askama::Error> {
         let FfiType::RustBuffer(Some(metadata)) = type_ else {
@@ -1232,8 +1370,10 @@ mod filters {
     }
 
     /// Convert an external RustBuffer to a local RustBuffer.
+    #[askama::filter_fn]
     pub fn ffi_cast_to_local_rust_buffer_if_needed(
         type_: &FfiType,
+        _: &dyn askama::Values,
         ci: &ComponentInterface,
     ) -> Result<String, askama::Error> {
         let FfiType::RustBuffer(Some(metadata)) = type_ else {
@@ -1246,77 +1386,90 @@ mod filters {
     }
 
     /// Append a `_` if the name is a valid c/c++ keyword
-    pub fn header_escape_name(nm: &str) -> Result<String, askama::Error> {
-        if CPP_KEYWORDS.contains(&nm) {
-            Ok(format!("{nm}_"))
-        } else {
-            Ok(nm.to_owned())
-        }
+    #[askama::filter_fn]
+    pub fn header_escape_name(nm: &str, _: &dyn askama::Values) -> Result<String, askama::Error> {
+        Ok(header_escape_name_inner(nm))
     }
 
+    #[askama::filter_fn]
     pub fn header_ffi_type_name(
         type_: &FfiType,
+        _: &dyn askama::Values,
         ci: &ComponentInterface,
     ) -> Result<String, askama::Error> {
         Ok(KotlinCodeOracle.ffi_type_label_header(type_, ci))
     }
 
+    #[askama::filter_fn]
     pub fn ffi_type_name_for_ffi_struct(
         type_: &FfiType,
+        _: &dyn askama::Values,
         ci: &ComponentInterface,
     ) -> Result<String, askama::Error> {
         Ok(KotlinCodeOracle.ffi_type_label_for_ffi_struct(type_, ci))
     }
 
-    pub fn ffi_default_value(type_: FfiType) -> Result<String, askama::Error> {
+    #[askama::filter_fn]
+    pub fn ffi_default_value(type_: FfiType, _: &dyn askama::Values) -> Result<String, askama::Error> {
         Ok(KotlinCodeOracle.ffi_default_value(&type_))
     }
 
     /// Get the idiomatic Kotlin rendering of a function name.
+    #[askama::filter_fn]
     pub fn class_name<S: AsRef<str>>(
         nm: S,
+        _: &dyn askama::Values,
         ci: &ComponentInterface,
     ) -> Result<String, askama::Error> {
         Ok(KotlinCodeOracle.class_name(ci, nm.as_ref()))
     }
 
     /// Get the idiomatic Kotlin rendering of a function name.
-    pub fn fn_name<S: AsRef<str>>(nm: S) -> Result<String, askama::Error> {
+    #[askama::filter_fn]
+    pub fn fn_name<S: AsRef<str>>(nm: S, _: &dyn askama::Values) -> Result<String, askama::Error> {
         Ok(KotlinCodeOracle.fn_name(nm.as_ref()))
     }
 
     /// Get the idiomatic Kotlin rendering of a variable name.
-    pub fn var_name<S: AsRef<str>>(nm: S) -> Result<String, askama::Error> {
+    #[askama::filter_fn]
+    pub fn var_name<S: AsRef<str>>(nm: S, _: &dyn askama::Values) -> Result<String, askama::Error> {
         Ok(KotlinCodeOracle.var_name(nm.as_ref()))
     }
 
     /// Get the idiomatic Kotlin rendering of a variable name.
-    pub fn var_name_raw<S: AsRef<str>>(nm: S) -> Result<String, askama::Error> {
+    #[askama::filter_fn]
+    pub fn var_name_raw<S: AsRef<str>>(nm: S, _: &dyn askama::Values) -> Result<String, askama::Error> {
         Ok(KotlinCodeOracle.var_name_raw(nm.as_ref()))
     }
 
     /// Get a String representing the name used for an individual enum variant.
-    pub fn variant_name(v: &Variant, config: &Config) -> Result<String, askama::Error> {
+    #[askama::filter_fn]
+    pub fn variant_name(v: &Variant, _: &dyn askama::Values, config: &Config) -> Result<String, askama::Error> {
         Ok(KotlinCodeOracle.enum_variant_name(v.name(), config))
     }
 
-    pub fn error_variant_name(v: &Variant) -> Result<String, askama::Error> {
+    #[askama::filter_fn]
+    pub fn error_variant_name(v: &Variant, _: &dyn askama::Values) -> Result<String, askama::Error> {
         let name = v.name().to_string().to_upper_camel_case();
         Ok(KotlinCodeOracle.convert_error_suffix(&name))
     }
 
     /// Get the idiomatic Kotlin rendering of an FFI callback function name
-    pub fn ffi_callback_name<S: AsRef<str>>(nm: S) -> Result<String, askama::Error> {
+    #[askama::filter_fn]
+    pub fn ffi_callback_name<S: AsRef<str>>(nm: S, _: &dyn askama::Values) -> Result<String, askama::Error> {
         Ok(KotlinCodeOracle.ffi_callback_name(nm.as_ref()))
     }
 
     /// Get the idiomatic Kotlin rendering of an FFI struct name
-    pub fn ffi_struct_name<S: AsRef<str>>(nm: S) -> Result<String, askama::Error> {
+    #[askama::filter_fn]
+    pub fn ffi_struct_name<S: AsRef<str>>(nm: S, _: &dyn askama::Values) -> Result<String, askama::Error> {
         Ok(KotlinCodeOracle.ffi_struct_name(nm.as_ref()))
     }
 
+    #[askama::filter_fn]
     pub fn async_poll(
         callable: impl Callable,
+        _: &dyn askama::Values,
         ci: &ComponentInterface,
     ) -> Result<String, askama::Error> {
         let ffi_func = callable.ffi_rust_future_poll(ci);
@@ -1325,8 +1478,10 @@ mod filters {
         ))
     }
 
+    #[askama::filter_fn]
     pub fn async_complete(
         callable: impl Callable,
+        _: &dyn askama::Values,
         ci: &ComponentInterface,
     ) -> Result<String, askama::Error> {
         let ffi_func = callable.ffi_rust_future_complete(ci);
@@ -1348,16 +1503,20 @@ mod filters {
         Ok(format!("{{ future, continuation -> {call} }}"))
     }
 
+    #[askama::filter_fn]
     pub fn async_free(
         callable: impl Callable,
+        _: &dyn askama::Values,
         ci: &ComponentInterface,
     ) -> Result<String, askama::Error> {
         let ffi_func = callable.ffi_rust_future_free(ci);
         Ok(format!("{{ future -> UniffiLib.{ffi_func}(future) }}"))
     }
 
+    #[askama::filter_fn]
     pub fn async_cancel(
         callable: impl Callable,
+        _: &dyn askama::Values,
         ci: &ComponentInterface,
     ) -> Result<String, askama::Error> {
         let ffi_func = callable.ffi_rust_future_cancel(ci);
@@ -1369,12 +1528,14 @@ mod filters {
     /// These are used to avoid name clashes with kotlin identifiers, but sometimes you want to
     /// render the name unquoted.  One example is the message property for errors where we want to
     /// display the name for the user.
-    pub fn unquote<S: AsRef<str>>(nm: S) -> Result<String, askama::Error> {
+    #[askama::filter_fn]
+    pub fn unquote<S: AsRef<str>>(nm: S, _: &dyn askama::Values) -> Result<String, askama::Error> {
         Ok(nm.as_ref().trim_matches('`').to_string())
     }
 
     /// Get the idiomatic Kotlin rendering of docstring
-    pub fn docstring<S: AsRef<str>>(docstring: S, spaces: &i32) -> Result<String, askama::Error> {
+    #[askama::filter_fn]
+    pub fn docstring<S: AsRef<str>>(docstring: S, _: &dyn askama::Values, spaces: &i32) -> Result<String, askama::Error> {
         let middle = textwrap::indent(&textwrap::dedent(docstring.as_ref()), " * ");
         let wrapped = format!("/**\n{middle}\n */");
 
@@ -1382,7 +1543,8 @@ mod filters {
         Ok(textwrap::indent(&wrapped, &" ".repeat(spaces)))
     }
 
-    pub fn repeat(string: &str, n: &i32) -> Result<String, askama::Error> {
+    #[askama::filter_fn]
+    pub fn repeat(string: &str, _: &dyn askama::Values, n: &i32) -> Result<String, askama::Error> {
         let n = usize::try_from(*n).unwrap_or_default();
         Ok(string.repeat(n))
     }

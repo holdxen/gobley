@@ -49,7 +49,7 @@ async fn get_uniffi_one_async() -> UniffiOneEnum {
     UniffiOneEnum::One
 }
 
-#[uniffi::export(with_foreign)]
+#[uniffi::export(rust, foreign)]
 pub trait UniffiOneTrait: Send + Sync {
     fn hello(&self) -> String;
 }
@@ -87,6 +87,7 @@ fn _just_to_get_error_support() -> Result<(), UniffiOneErrorInterface> {
 }
 
 // Note `UDL` vs `Udl` is important here to test foreign binding name fixups.
+#[uniffi::trait_interface]
 pub trait UniffiOneUDLTrait: Send + Sync {
     fn hello(&self) -> String;
 }

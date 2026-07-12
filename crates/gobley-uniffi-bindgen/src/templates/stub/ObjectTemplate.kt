@@ -7,13 +7,13 @@
 {%- let is_error = ci.is_name_used_as_error(name) %}
 {%- let ffi_converter_name = obj|ffi_converter_name %}
 
-{%- call kt::docstring(obj, 0) %}
+{%- call kt::docstring(obj, 0) %}{% endcall %}
 {% if (is_error) %}
 {{ visibility() }}actual open class {{ impl_class_name }} : kotlin.Exception, Disposable, {{ interface_name }} {
 {% else -%}
 {{ visibility() }}actual open class {{ impl_class_name }}: Disposable, {{ interface_name }}
 {%- for t in obj.trait_impls() -%}
-, {{ self::trait_interface_name(ci, t.trait_name)? }}
+, {{ self::trait_interface_name(ci, t.trait_ty.name().unwrap())? }}
 {%- endfor %} {
 {%- endif %}
 
@@ -29,9 +29,9 @@
     {%-     if cons.is_async() %}
     // Note no constructor generated for this object as it is async.
     {%-     else %}
-    {%- call kt::docstring(cons, 4) %}
+    {%- call kt::docstring(cons, 4) %}{% endcall %}
 
-    {{ visibility() }}actual constructor({% call kt::arg_list(cons, false) -%}) {
+    {{ visibility() }}actual constructor({% call kt::arg_list(cons, false) -%}{%- endcall %}) {
         TODO()
     }
     {%-     endif %}
@@ -47,7 +47,7 @@
     }
 
     {% for meth in obj.methods() -%}
-    {%- call kt::func_decl_with_stub("actual override", meth, 4) -%}
+    {%- call kt::func_decl_with_stub("actual override", meth, 4) -%}{%- endcall %}
     {% endfor %}
 
     {%- for tm in obj.uniffi_traits() %}
@@ -73,7 +73,7 @@
     {% if !obj.alternate_constructors().is_empty() -%}
     {{ visibility() }}actual companion object {
         {% for cons in obj.alternate_constructors() -%}
-        {%- call kt::func_decl_with_stub("actual", cons, 8) %}
+        {%- call kt::func_decl_with_stub("actual", cons, 8) %}{% endcall %}
         {% endfor %}
     }
     {% else %}

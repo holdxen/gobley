@@ -5,7 +5,7 @@ internal object {{ trait_impl }} {
     {%- for (ffi_callback, meth) in vtable_methods.iter() %}
     internal object {{ meth.name()|var_name }}: {{ ffi_callback.name()|ffi_callback_name }} {
         override fun callback (
-            {%- call kt::arg_list_ffi_decl(ffi_callback, 12) %}
+            {%- call kt::arg_list_ffi_decl(ffi_callback, 12) %}{% endcall %}
         )
         {%- if let Some(return_type) = ffi_callback.return_type() -%}
             : {{ return_type|ffi_type_name_by_value(ci) }}

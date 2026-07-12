@@ -6,28 +6,18 @@
 {%- let interface_docstring = obj.docstring() %}
 {%- let is_error = ci.is_name_used_as_error(name) %}
 {%- let ffi_converter_name = obj|ffi_converter_name %}
-{%- let actual -%}
-{%- if config.kotlin_multiplatform -%}
-{%-     let actual = "actual" -%}
-{%- else -%}
-{%-     let actual = "" -%}
-{%- endif %}
-{%- let actual_override -%}
-{%- if config.kotlin_multiplatform -%}
-{%-     let actual_override = "actual override" -%}
-{%- else -%}
-{%-     let actual_override = "override" -%}
-{%- endif %}
+{%- let actual = self.actual_keyword() %}
+{%- let actual_override = self.actual_override_keyword() %}
 
 {%- macro emit_actual %}{% if config.kotlin_multiplatform %}actual {% endif %}{% endmacro -%}
 
-{%- call kt::docstring(obj, 0) %}
+{%- call kt::docstring(obj, 0) %}{% endcall %}
 {% if (is_error) %}
-{{ visibility() }}{% call emit_actual %}open class {{ impl_class_name }} : kotlin.Exception, Disposable, {{ interface_name }} {
+{{ visibility() }}{% call emit_actual %}{% endcall %}open class {{ impl_class_name }} : kotlin.Exception, Disposable, {{ interface_name }} {
 {% else -%}
-{{ visibility() }}{% call emit_actual %}open class {{ impl_class_name }}: Disposable, {{ interface_name }}
+{{ visibility() }}{% call emit_actual %}{% endcall %}open class {{ impl_class_name }}: Disposable, {{ interface_name }}
 {%- for t in obj.trait_impls() -%}
-, {{ self::trait_interface_name(ci, t.trait_name)? }}
+, {{ self::trait_interface_name(ci, t.trait_ty.name().unwrap())? }}
 {%- endfor %} {
 {%- endif %}
 
@@ -41,7 +31,7 @@
      * attempt to actually use an object constructed this way will fail as there is no
      * connected Rust object.
      */
-    {{ visibility() }}{% call emit_actual %}constructor(noPointer: NoPointer) {
+    {{ visibility() }}{% call emit_actual %}{% endcall %}constructor(noPointer: NoPointer) {
         this.pointer = null
         this.cleanable = UniffiLib.CLEANER.register(this, UniffiPointerDestroyer(null))
     }
@@ -51,9 +41,9 @@
     {%-     if cons.is_async() %}
     // Note no constructor generated for this object as it is async.
     {%-     else %}
-    {%- call kt::docstring(cons, 4) %}
-    {{ visibility() }}{% call emit_actual %}constructor({% call kt::arg_list(cons, false) -%}) : this(
-        {% call kt::to_ffi_call(cons, 8) %}
+    {%- call kt::docstring(cons, 4) %}{% endcall %}
+    {{ visibility() }}{% call emit_actual %}{% endcall %}constructor({% call kt::arg_list(cons, false) -%}{%- endcall %}) : this(
+        {% call kt::to_ffi_call(cons, 8) %}{% endcall %}
     )
     {%-     endif %}
     {%- when None %}
@@ -76,7 +66,7 @@
         }
     }
 
-    {% call emit_actual %}override fun destroy() {
+    {% call emit_actual %}{% endcall %}override fun destroy() {
         // Only allow a single call to this method.
         // TODO: maybe we should log a warning if called more than once?
         if (this.wasDestroyed.compareAndSet(false, true)) {
@@ -87,7 +77,7 @@
         }
     }
 
-    {% call emit_actual %}override fun close() {
+    {% call emit_actual %}{% endcall %}override fun close() {
         synchronized { this.destroy() }
     }
 
@@ -133,25 +123,25 @@
     }
 
     {% for meth in obj.methods() -%}
-    {%- call kt::func_decl_with_body(actual_override, meth, 4) -%}
+    {%- call kt::func_decl_with_body(actual_override, meth, 4) -%}{%- endcall %}
     {% endfor %}
 
     {%- for tm in obj.uniffi_traits() %}
     {%-     match tm %}
     {%         when UniffiTrait::Display { fmt } %}
-    {% call emit_actual %}override fun toString(): String {
-        return {{ fmt.return_type().unwrap()|lift_fn }}({% call kt::to_ffi_call(fmt, 8) %})
+    {% call emit_actual %}{% endcall %}override fun toString(): String {
+        return {{ fmt.return_type().unwrap()|lift_fn }}({% call kt::to_ffi_call(fmt, 8) %}{% endcall %})
     }
     {%         when UniffiTrait::Eq { eq, ne } %}
     {# only equals used #}
-    {% call emit_actual %}override fun equals(other: Any?): Boolean {
+    {% call emit_actual %}{% endcall %}override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is {{ impl_class_name}}) return false
-        return {{ eq.return_type().unwrap()|lift_fn }}({% call kt::to_ffi_call(eq, 8) %})
+        return {{ eq.return_type().unwrap()|lift_fn }}({% call kt::to_ffi_call(eq, 8) %}{% endcall %})
     }
     {%         when UniffiTrait::Hash { hash } %}
-    {% call emit_actual %}override fun hashCode(): Int {
-        return {{ hash.return_type().unwrap()|lift_fn }}({%- call kt::to_ffi_call(hash, 8) %}).toInt()
+    {% call emit_actual %}{% endcall %}override fun hashCode(): Int {
+        return {{ hash.return_type().unwrap()|lift_fn }}({%- call kt::to_ffi_call(hash, 8) %}{% endcall %}).toInt()
     }
     {%-         else %}
     {%-     endmatch %}
@@ -159,13 +149,13 @@
 
     {# XXX - "companion object" confusion? How to have alternate constructors *and* be an error? #}
     {% if !obj.alternate_constructors().is_empty() -%}
-    {{ visibility() }}{% call emit_actual %}companion object {
+    {{ visibility() }}{% call emit_actual %}{% endcall %}companion object {
         {% for cons in obj.alternate_constructors() -%}
-        {%- call kt::func_decl_with_body(actual, cons, 8) %}
+        {%- call kt::func_decl_with_body(actual, cons, 8) %}{% endcall %}
         {% endfor %}
     }
     {% else %}
-    {{ visibility() }}{% call emit_actual %}companion object
+    {{ visibility() }}{% call emit_actual %}{% endcall %}companion object
     {% endif %}
 }
 
@@ -190,12 +180,12 @@
 {%- endif -%}
 {%- endmacro %}
 
-{{ visibility() }}object {{ ffi_converter_name }}: FfiConverter<{%- call converter_type(obj) -%}, Pointer> {
+{{ visibility() }}object {{ ffi_converter_name }}: FfiConverter<{%- call converter_type(obj) -%}{%- endcall %}, Pointer> {
     {%- if obj.has_callback_interface() %}
-    internal val handleMap = UniffiHandleMap<{%- call converter_type(obj) -%}>()
+    internal val handleMap = UniffiHandleMap<{%- call converter_type(obj) -%}{%- endcall %}>()
     {%- endif %}
 
-    override fun lower(value: {% call converter_type(obj) %}): Pointer {
+    override fun lower(value: {% call converter_type(obj) %}{% endcall %}): Pointer {
         {%- if obj.has_callback_interface() %}
         return handleMap.insert(value).toPointer()
         {%- else %}
@@ -203,19 +193,19 @@
         {%- endif %}
     }
 
-    override fun lift(value: Pointer): {% call converter_type(obj) %} {
+    override fun lift(value: Pointer): {% call converter_type(obj) %}{% endcall %} {
         return {{ impl_class_name }}(value)
     }
 
-    override fun read(buf: ByteBuffer): {% call converter_type(obj) %} {
+    override fun read(buf: ByteBuffer): {% call converter_type(obj) %}{% endcall %} {
         // The Rust code always writes pointers as 8 bytes, and will
         // fail to compile if they don't fit.
         return lift(buf.getLong().toPointer())
     }
 
-    override fun allocationSize(value: {% call converter_type(obj) %}): ULong = 8UL
+    override fun allocationSize(value: {% call converter_type(obj) %}{% endcall %}): ULong = 8UL
 
-    override fun write(value: {% call converter_type(obj) %}, buf: ByteBuffer) {
+    override fun write(value: {% call converter_type(obj) %}{% endcall %}, buf: ByteBuffer) {
         // The Rust code always expects pointers written as 8 bytes,
         // and will fail to compile if they don't fit.
         buf.putLong(lower(value).toLong())

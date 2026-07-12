@@ -37,12 +37,12 @@
 {{ visibility() }}typealias RustBufferByValue = RustBufferStruct.ByValue
 
 internal fun RustBuffer.asByteBuffer(): ByteBuffer? {
-    {% call kt::check_rust_buffer_length("this.len") %}
+    {% call kt::check_rust_buffer_length("this.len") %}{% endcall %}
     return ByteBuffer(data?.getByteBuffer(0L, this.len) ?: return null)
 }
 
 internal fun RustBufferByValue.asByteBuffer(): ByteBuffer? {
-    {% call kt::check_rust_buffer_length("this.len") %}
+    {% call kt::check_rust_buffer_length("this.len") %}{% endcall %}
     return ByteBuffer(data?.getByteBuffer(0L, this.len) ?: return null)
 }
 

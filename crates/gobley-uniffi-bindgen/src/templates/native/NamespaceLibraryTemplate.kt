@@ -78,14 +78,14 @@ internal object UniffiLib {
 
     {% for func in ci.iter_ffi_function_definitions() -%}
     fun {{ func.name() }}(
-        {%- call kt::arg_list_ffi_decl(func, 8) %}
+        {%- call kt::arg_list_ffi_decl(func, 8) %}{% endcall %}
     ): {% match func.return_type() -%}
     {%- when Some(return_type) -%}
     {{- return_type.borrow()|ffi_type_name_by_value(ci) -}}
     {%- when None -%}
     Unit
     {%- endmatch %} = {{ ci.namespace() }}.cinterop.{{ func.name() }}(
-        {%- call kt::arg_list_ffi_call_native(func) %}
+        {%- call kt::arg_list_ffi_call_native(func) %}{% endcall %}
     )
     {%- if let Some(return_type) = func.return_type() -%}
     {{- return_type|ffi_cast_to_external_rust_buffer_if_needed(ci) -}}

@@ -68,7 +68,7 @@ impl Trait for TraitImpl {
     }
 }
 
-#[uniffi::export(with_foreign)]
+#[uniffi::export(rust, foreign)]
 pub trait TraitWithForeign: Send + Sync {
     fn name(&self) -> String;
 }

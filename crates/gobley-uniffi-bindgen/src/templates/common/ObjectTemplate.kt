@@ -9,13 +9,13 @@
 
 {%- include "Interface.kt" %}
 {% if config.kotlin_multiplatform %}
-{% call kt::docstring(obj, 0) %}
+{% call kt::docstring(obj, 0) %}{% endcall %}
 {% if (is_error) %}
 {{ visibility() }}expect open class {{ impl_class_name }} : kotlin.Exception, Disposable, {{ interface_name }} {
 {% else -%}
 {{ visibility() }}expect open class {{ impl_class_name }}: Disposable, {{ interface_name }}
 {%- for t in obj.trait_impls() -%}
-, {{ self::trait_interface_name(ci, t.trait_name)? }}
+, {{ self::trait_interface_name(ci, t.trait_ty.name().unwrap())? }}
 {%- endfor %} {
 {%- endif %}
     /**
@@ -28,7 +28,7 @@
     {%-     if cons.is_async() %}
     @Suppress("ConvertSecondaryConstructorToPrimary")
     {%-     else %}
-    {%- call kt::docstring(cons, 4) %}
+    {%- call kt::docstring(cons, 4) %}{% endcall %}
     {%-     endif %}
     {%- when None %}
     @Suppress("ConvertSecondaryConstructorToPrimary")
@@ -40,8 +40,8 @@
     {%-     if cons.is_async() -%}
     // Note no constructor generated for this object as it is async.
     {%     else -%}
-    {%- call kt::docstring(cons, 4) %}
-    {{ visibility() }}constructor({% call kt::arg_list(cons, true) -%})
+    {%- call kt::docstring(cons, 4) %}{% endcall %}
+    {{ visibility() }}constructor({% call kt::arg_list(cons, true) -%}{%- endcall %})
     {%-     endif %}
     {%- when None %}
     {%- endmatch %}
@@ -50,7 +50,7 @@
     override fun close()
 
     {% for meth in obj.methods() -%}
-    {%- call kt::func_decl("override", meth, 4, false) %}
+    {%- call kt::func_decl("override", meth, 4, false) %}{% endcall %}
     {% endfor %}
 
     {%- for tm in obj.uniffi_traits() %}
@@ -70,7 +70,7 @@
     {%- if !obj.alternate_constructors().is_empty() -%}
     {{ visibility() }}companion object {
         {% for cons in obj.alternate_constructors() -%}
-        {%- call kt::func_decl("", cons, 8, false) %}
+        {%- call kt::func_decl("", cons, 8, false) %}{% endcall %}
         {% endfor %}
     }
     {% else %}

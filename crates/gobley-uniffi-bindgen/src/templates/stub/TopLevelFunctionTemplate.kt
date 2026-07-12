@@ -1,1 +1,1 @@
-{%- call kt::func_decl_with_stub("actual", func, 0) %}
+{%- call kt::func_decl_with_stub("actual", func, 0) %}{% endcall %}

@@ -37,6 +37,7 @@ members = [
     "tests/uniffi/simple-iface",
     "tests/uniffi/struct-default-values",
     "tests/uniffi/trait-methods",
+    "tests/uniffi/trait-record-enum",
     "tests/uniffi/type-limits",
 
     "examples/arithmetic-procmacro",
@@ -62,8 +63,8 @@ lazy_static = "1.4"
 once_cell = "1.18"
 thiserror = "1"
 tokio = "1"
-uniffi = "=0.29.5"
-uniffi_bindgen = "=0.29.5"
-uniffi_macros = "=0.29.5"
-uniffi_meta = "=0.29.5"
+uniffi = "=0.32.0"
+uniffi_bindgen = "=0.32.0"
+uniffi_macros = "=0.32.0"
+uniffi_meta = "=0.32.0"
 url = "2.2"
