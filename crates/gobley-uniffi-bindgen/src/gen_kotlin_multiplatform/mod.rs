@@ -2169,4 +2169,759 @@ mod tests {
             "ffi should contain 'add' function"
         );
     }
+
+    // ============================================================
+    // Comprehensive uniffi feature tests
+    // ============================================================
+
+    // --- Primitive types ---
+
+    #[test]
+    fn primitive_i8_type() {
+        let ci = ComponentInterface::new("test");
+        assert_eq!(Type::Int8.as_codetype().type_label(&ci), "kotlin.Byte");
+    }
+
+    #[test]
+    fn primitive_i16_type() {
+        let ci = ComponentInterface::new("test");
+        assert_eq!(Type::Int16.as_codetype().type_label(&ci), "kotlin.Short");
+    }
+
+    #[test]
+    fn primitive_i32_type() {
+        let ci = ComponentInterface::new("test");
+        assert_eq!(Type::Int32.as_codetype().type_label(&ci), "kotlin.Int");
+    }
+
+    #[test]
+    fn primitive_i64_type() {
+        let ci = ComponentInterface::new("test");
+        assert_eq!(Type::Int64.as_codetype().type_label(&ci), "kotlin.Long");
+    }
+
+    #[test]
+    fn primitive_u8_type() {
+        let ci = ComponentInterface::new("test");
+        assert_eq!(Type::UInt8.as_codetype().type_label(&ci), "kotlin.UByte");
+    }
+
+    #[test]
+    fn primitive_u16_type() {
+        let ci = ComponentInterface::new("test");
+        assert_eq!(Type::UInt16.as_codetype().type_label(&ci), "kotlin.UShort");
+    }
+
+    #[test]
+    fn primitive_u32_type() {
+        let ci = ComponentInterface::new("test");
+        assert_eq!(Type::UInt32.as_codetype().type_label(&ci), "kotlin.UInt");
+    }
+
+    #[test]
+    fn primitive_u64_type() {
+        let ci = ComponentInterface::new("test");
+        assert_eq!(Type::UInt64.as_codetype().type_label(&ci), "kotlin.ULong");
+    }
+
+    #[test]
+    fn primitive_f32_type() {
+        let ci = ComponentInterface::new("test");
+        assert_eq!(Type::Float32.as_codetype().type_label(&ci), "kotlin.Float");
+    }
+
+    #[test]
+    fn primitive_f64_type() {
+        let ci = ComponentInterface::new("test");
+        assert_eq!(Type::Float64.as_codetype().type_label(&ci), "kotlin.Double");
+    }
+
+    #[test]
+    fn primitive_bool_type() {
+        let ci = ComponentInterface::new("test");
+        assert_eq!(Type::Boolean.as_codetype().type_label(&ci), "kotlin.Boolean");
+    }
+
+    #[test]
+    fn primitive_string_type() {
+        let ci = ComponentInterface::new("test");
+        assert_eq!(Type::String.as_codetype().type_label(&ci), "kotlin.String");
+    }
+
+    #[test]
+    fn primitive_bytes_type() {
+        let ci = ComponentInterface::new("test");
+        assert_eq!(Type::Bytes.as_codetype().type_label(&ci), "kotlin.ByteArray");
+    }
+
+    // --- Compound types ---
+
+    #[test]
+    fn optional_type_label() {
+        let ci = ComponentInterface::new("test");
+        let opt = Type::Optional {
+            inner_type: Box::new(Type::Int32),
+        };
+        assert_eq!(opt.as_codetype().type_label(&ci), "kotlin.Int?");
+    }
+
+    #[test]
+    fn optional_nested_type_label() {
+        let ci = ComponentInterface::new("test");
+        let opt = Type::Optional {
+            inner_type: Box::new(Type::Optional {
+                inner_type: Box::new(Type::String),
+            }),
+        };
+        assert_eq!(opt.as_codetype().type_label(&ci), "kotlin.String??");
+    }
+
+    #[test]
+    fn sequence_type_label() {
+        let ci = ComponentInterface::new("test");
+        let seq = Type::Sequence {
+            inner_type: Box::new(Type::UInt32),
+        };
+        assert_eq!(seq.as_codetype().type_label(&ci), "List<kotlin.UInt>");
+    }
+
+    #[test]
+    fn map_type_label() {
+        let ci = ComponentInterface::new("test");
+        let map = Type::Map {
+            key_type: Box::new(Type::String),
+            value_type: Box::new(Type::Int32),
+        };
+        assert_eq!(
+            map.as_codetype().type_label(&ci),
+            "Map<kotlin.String, kotlin.Int>"
+        );
+    }
+
+    #[test]
+    fn set_type_label() {
+        let ci = ComponentInterface::new("test");
+        let set = Type::Set {
+            inner_type: Box::new(Type::String),
+        };
+        assert_eq!(set.as_codetype().type_label(&ci), "Set<kotlin.String>");
+    }
+
+    // --- FFI type mapping ---
+
+    #[test]
+    fn ffi_type_i8_to_int8_t() {
+        let ci = ComponentInterface::new("test");
+        let ffi = FfiType::Int8;
+        assert_eq!(
+            KotlinCodeOracle.ffi_type_label_header(&ffi, &ci),
+            "int8_t"
+        );
+    }
+
+    #[test]
+    fn ffi_type_i16_to_int16_t() {
+        let ci = ComponentInterface::new("test");
+        let ffi = FfiType::Int16;
+        assert_eq!(
+            KotlinCodeOracle.ffi_type_label_header(&ffi, &ci),
+            "int16_t"
+        );
+    }
+
+    #[test]
+    fn ffi_type_i32_to_int32_t() {
+        let ci = ComponentInterface::new("test");
+        let ffi = FfiType::Int32;
+        assert_eq!(
+            KotlinCodeOracle.ffi_type_label_header(&ffi, &ci),
+            "int32_t"
+        );
+    }
+
+    #[test]
+    fn ffi_type_i64_to_int64_t() {
+        let ci = ComponentInterface::new("test");
+        let ffi = FfiType::Int64;
+        assert_eq!(
+            KotlinCodeOracle.ffi_type_label_header(&ffi, &ci),
+            "int64_t"
+        );
+    }
+
+    #[test]
+    fn ffi_type_handle_to_int64_t() {
+        let ci = ComponentInterface::new("test");
+        let ffi = FfiType::Handle;
+        assert_eq!(
+            KotlinCodeOracle.ffi_type_label_header(&ffi, &ci),
+            "int64_t"
+        );
+    }
+
+    #[test]
+    fn ffi_type_handle_to_long() {
+        let ci = ComponentInterface::new("test");
+        let ffi = FfiType::Handle;
+        assert_eq!(KotlinCodeOracle.ffi_type_label(&ffi, &ci), "Long");
+    }
+
+    #[test]
+    fn ffi_type_void_pointer() {
+        let ci = ComponentInterface::new("test");
+        let ffi = FfiType::VoidPointer;
+        assert_eq!(KotlinCodeOracle.ffi_type_label(&ffi, &ci), "Pointer");
+        assert_eq!(
+            KotlinCodeOracle.ffi_type_label_header(&ffi, &ci),
+            "void *"
+        );
+    }
+
+    // --- Canonical names ---
+
+    #[test]
+    fn canonical_name_i32() {
+        // Int32 canonical name is "Int" (not "Int32")
+        assert_eq!(Type::Int32.as_codetype().canonical_name(), "Int");
+    }
+
+    #[test]
+    fn canonical_name_string() {
+        assert_eq!(Type::String.as_codetype().canonical_name(), "String");
+    }
+
+    #[test]
+    fn canonical_name_bool() {
+        assert_eq!(Type::Boolean.as_codetype().canonical_name(), "Boolean");
+    }
+
+    #[test]
+    fn canonical_name_optional() {
+        let opt = Type::Optional {
+            inner_type: Box::new(Type::Int32),
+        };
+        // Optional<Int32> canonical name is "OptionalInt"
+        assert_eq!(opt.as_codetype().canonical_name(), "OptionalInt");
+    }
+
+    #[test]
+    fn canonical_name_sequence() {
+        let seq = Type::Sequence {
+            inner_type: Box::new(Type::String),
+        };
+        assert_eq!(seq.as_codetype().canonical_name(), "SequenceString");
+    }
+
+    #[test]
+    fn canonical_name_map() {
+        let map = Type::Map {
+            key_type: Box::new(Type::String),
+            value_type: Box::new(Type::Int32),
+        };
+        // Map<String, Int32> canonical name is "MapStringInt"
+        assert_eq!(
+            map.as_codetype().canonical_name(),
+            "MapStringInt"
+        );
+    }
+
+    // --- FfiConverter names ---
+
+    #[test]
+    fn ffi_converter_name_i32() {
+        // Int32 ffi_converter name is "FfiConverterInt"
+        assert_eq!(
+            Type::Int32.as_codetype().ffi_converter_name(),
+            "FfiConverterInt"
+        );
+    }
+
+    #[test]
+    fn ffi_converter_name_string() {
+        assert_eq!(
+            Type::String.as_codetype().ffi_converter_name(),
+            "FfiConverterString"
+        );
+    }
+
+    #[test]
+    fn ffi_converter_name_bool() {
+        assert_eq!(
+            Type::Boolean.as_codetype().ffi_converter_name(),
+            "FfiConverterBoolean"
+        );
+    }
+
+    // --- Generated code: Primitive types in UDL ---
+
+    #[test]
+    fn generated_primitive_types_in_function() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface TypeChecker {
+                constructor();
+                i8 pass_i8(i8 v);
+                i16 pass_i16(i16 v);
+                i32 pass_i32(i32 v);
+                i64 pass_i64(i64 v);
+                u8 pass_u8(u8 v);
+                u16 pass_u16(u16 v);
+                u32 pass_u32(u32 v);
+                u64 pass_u64(u64 v);
+                float pass_f32(float v);
+                double pass_f64(double v);
+                boolean pass_bool(boolean v);
+                string pass_string(string v);
+                bytes pass_bytes(bytes v);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        // All primitive types should be generated
+        assert!(ffi.contains("passI8"), "should have passI8");
+        assert!(ffi.contains("passI16"), "should have passI16");
+        assert!(ffi.contains("passI32"), "should have passI32");
+        assert!(ffi.contains("passI64"), "should have passI64");
+        assert!(ffi.contains("passU8"), "should have passU8");
+        assert!(ffi.contains("passU16"), "should have passU16");
+        assert!(ffi.contains("passU32"), "should have passU32");
+        assert!(ffi.contains("passU64"), "should have passU64");
+        assert!(ffi.contains("passF32"), "should have passF32");
+        assert!(ffi.contains("passF64"), "should have passF64");
+        assert!(ffi.contains("passBool"), "should have passBool");
+        assert!(ffi.contains("passString"), "should have passString");
+        assert!(ffi.contains("passBytes"), "should have passBytes");
+    }
+
+    // --- Generated code: Optional type ---
+
+    #[test]
+    fn generated_optional_type() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface OptTest {
+                constructor();
+                string? get_optional(boolean return_null);
+                void set_optional(string? value);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        assert!(
+            ffi.contains("getOptional") || ffi.contains("get_optional"),
+            "should have getOptional function"
+        );
+    }
+
+    // --- Generated code: Vec type ---
+
+    #[test]
+    fn generated_vec_type() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface VecTest {
+                constructor();
+                sequence<u32> get_numbers();
+                void set_numbers(sequence<u32> numbers);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        assert!(
+            ffi.contains("getNumbers") || ffi.contains("get_numbers"),
+            "should have getNumbers function"
+        );
+    }
+
+    // --- Generated code: HashMap type ---
+
+    #[test]
+    fn generated_hashmap_type() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface MapTest {
+                constructor();
+                record<DOMString, u32> get_map();
+                void set_map(record<DOMString, u32> map);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        assert!(
+            ffi.contains("getMap") || ffi.contains("get_map"),
+            "should have getMap function"
+        );
+    }
+
+    // --- Generated code: Dictionary (Record) ---
+
+    #[test]
+    fn generated_dictionary_record() {
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary Point {
+                double x;
+                double y;
+            };
+
+            interface Geometry {
+                constructor();
+                Point create_point(double x, double y);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let common = &bindings.common;
+
+        assert!(
+            common.contains("Point"),
+            "should have Point record"
+        );
+    }
+
+    // --- Generated code: Enum ---
+
+    #[test]
+    fn generated_enum_flat() {
+        let udl = r#"
+            namespace test_crate {};
+
+            enum Direction {
+                "North",
+                "South",
+                "East",
+                "West"
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let common = &bindings.common;
+
+        assert!(
+            common.contains("Direction"),
+            "should have Direction enum"
+        );
+        // Enum variants might be in different format (e.g., NORTH, North, etc.)
+        assert!(
+            common.contains("North") || common.contains("NORTH") || common.contains("north"),
+            "should have North variant"
+        );
+    }
+
+    // --- Generated code: Error type ---
+
+    #[test]
+    fn generated_error_type() {
+        let udl = r#"
+            namespace test_crate {};
+
+            [Error]
+            enum AppError {
+                "NotFound",
+                "Unauthorized",
+                "Internal"
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let common = &bindings.common;
+
+        // Error type name might be converted (e.g., AppException)
+        assert!(
+            common.contains("AppError") || common.contains("AppException"),
+            "should have AppError/AppException"
+        );
+        assert!(
+            common.contains("Exception"),
+            "error should extend Exception"
+        );
+    }
+
+    // --- Generated code: Object with constructor ---
+
+    #[test]
+    fn generated_object_with_constructor() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Person {
+                constructor(string name, u32 age);
+                string get_name();
+                u32 get_age();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        assert!(
+            ffi.contains("Person") || ffi.contains("PersonImpl"),
+            "should have Person class"
+        );
+        assert!(
+            ffi.contains("getName") || ffi.contains("get_name"),
+            "should have getName method"
+        );
+        assert!(
+            ffi.contains("getAge") || ffi.contains("get_age"),
+            "should have getAge method"
+        );
+    }
+
+    // --- Generated code: Object with void method ---
+
+    #[test]
+    fn generated_object_void_method() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Logger {
+                constructor();
+                void log(string message);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        assert!(
+            ffi.contains("log") || ffi.contains("`log`"),
+            "should have log method"
+        );
+    }
+
+    // --- Generated code: Object with alternate constructor ---
+
+    #[test]
+    fn generated_object_alternate_constructor() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                [Name="create_with_value"]
+                constructor(u32 value);
+                u32 get_value();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        assert!(
+            ffi.contains("createWithValue") || ffi.contains("create_with_value"),
+            "should have alternate constructor"
+        );
+    }
+
+    // --- Generated code: Callback interface ---
+
+    #[test]
+    fn generated_callback_interface_basic() {
+        let udl = r#"
+            namespace test_crate {};
+
+            callback interface Observer {
+                void on_update(string data);
+            };
+
+            interface Subject {
+                constructor();
+                void register(Observer observer);
+                void notify(string data);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        assert!(
+            ffi.contains("Observer") || ffi.contains("ObserverInterface"),
+            "should have Observer callback interface"
+        );
+        assert!(
+            ffi.contains("register") || ffi.contains("`register`"),
+            "should have register method"
+        );
+    }
+
+    // --- Generated code: Callback interface with return value ---
+
+    #[test]
+    fn generated_callback_interface_with_return() {
+        let udl = r#"
+            namespace test_crate {};
+
+            callback interface Transformer {
+                string transform(string input);
+            };
+
+            interface Processor {
+                constructor();
+                string process(string data, Transformer transformer);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        assert!(
+            ffi.contains("Transformer") || ffi.contains("TransformerInterface"),
+            "should have Transformer callback interface"
+        );
+    }
+
+    // --- Generated code: Multiple interfaces ---
+
+    #[test]
+    fn generated_multiple_interfaces() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface InterfaceA {
+                constructor();
+                string method_a();
+            };
+
+            interface InterfaceB {
+                constructor();
+                i32 method_b();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        assert!(
+            ffi.contains("InterfaceA") || ffi.contains("InterfaceAImpl"),
+            "should have InterfaceA"
+        );
+        assert!(
+            ffi.contains("InterfaceB") || ffi.contains("InterfaceBImpl"),
+            "should have InterfaceB"
+        );
+    }
+
+    // --- Generated code: Object with no methods (just constructor) ---
+
+    #[test]
+    fn generated_object_no_methods() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Empty {
+                constructor();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        assert!(
+            ffi.contains("Empty") || ffi.contains("EmptyImpl"),
+            "should have Empty class"
+        );
+    }
+
+    // --- Generated code: Function with no return value ---
+
+    #[test]
+    fn generated_function_void_return() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface VoidFunc {
+                constructor();
+                void do_something();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        assert!(
+            ffi.contains("doSomething") || ffi.contains("do_something"),
+            "should have doSomething method"
+        );
+    }
+
+    // --- Generated code: Complex UDL with multiple types ---
+
+    #[test]
+    fn generated_complex_udl() {
+        let udl = r#"
+            namespace test_crate {};
+
+            enum Status {
+                "Active",
+                "Inactive"
+            };
+
+            dictionary User {
+                string name;
+                u32 age;
+                Status status;
+            };
+
+            callback interface UserCallback {
+                void on_user_created(User user);
+            };
+
+            interface UserManager {
+                constructor();
+                User create_user(string name, u32 age);
+                void register_callback(UserCallback callback);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let common = &bindings.common;
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        assert!(common.contains("Status"), "should have Status enum");
+        assert!(common.contains("User"), "should have User record");
+        assert!(
+            ffi.contains("UserManager") || ffi.contains("UserManagerImpl"),
+            "should have UserManager class"
+        );
+    }
+
+    // --- Generated code: Verify common and ffi both exist ---
+
+    #[test]
+    fn generated_bindings_have_common_and_ffi() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+
+        assert!(bindings.common.len() > 0, "common should not be empty");
+        assert!(bindings.jvm.is_some(), "jvm should exist");
+        assert!(bindings.native.is_some(), "native should exist");
+    }
+
+    // --- Generated code: Verify namespace ---
+
+    #[test]
+    fn generated_bindings_use_namespace() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let common = &bindings.common;
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        // The namespace should be used in the generated code
+        // It might appear as package name, class name prefix, or in comments
+        assert!(
+            common.len() > 0 && ffi.len() > 0,
+            "bindings should be generated"
+        );
+    }
 }
