@@ -66,8 +66,8 @@ private fun Project.configureProjectProperties(
             "../crates/gobley-uniffi-bindgen/Cargo.toml"
         ).asFile
     )
-    group = "dev.gobley.gradle"
-    version = when {
+    group = findProperty("gobley.publish.group")?.toString() ?: "dev.gobley.gradle"
+    version = findProperty("gobley.publish.version")?.toString() ?: when {
         bindgenManifest.version.contains('-') -> bindgenManifest.version.substringBefore('-') + "-SNAPSHOT"
         else -> bindgenManifest.version
     }
@@ -104,14 +104,15 @@ private fun Project.configureMavenCentralPublishing(gradlePlugin: Boolean, signi
             name.set(project.name)
             description.set(project.description)
             inceptionYear.set("2023")
-            url.set(propertyOrEnv("gobley.projects.gradle.pom.url"))
+            url.set(propertyOrEnv("gobley.projects.gradle.pom.url") ?: "https://github.com/holdxen/gobley")
             licenses {
                 license {
-                    name.set(propertyOrEnv("gobley.projects.gradle.pom.license.name"))
-                    url.set(propertyOrEnv("gobley.projects.gradle.pom.license.url"))
+                    name.set(propertyOrEnv("gobley.projects.gradle.pom.license.name") ?: "MPL-2.0")
+                    url.set(propertyOrEnv("gobley.projects.gradle.pom.license.url") ?: "https://www.mozilla.org/en-US/MPL/2.0/")
                 }
             }
             developers {
+                var developerCount = 0
                 for (developerIdx in generateSequence(0) { it + 1 }) {
                     val propertyNamePrefix = "gobley.projects.gradle.pom.developer$developerIdx"
                     val developerId = propertyOrEnv("$propertyNamePrefix.id") ?: break
@@ -120,12 +121,19 @@ private fun Project.configureMavenCentralPublishing(gradlePlugin: Boolean, signi
                         id.set(developerId)
                         name.set(developerName)
                     }
+                    developerCount++
+                }
+                if (developerCount == 0) {
+                    developer {
+                        id.set("community")
+                        name.set("Gobley Community")
+                    }
                 }
             }
             scm {
-                url.set(propertyOrEnv("gobley.projects.gradle.pom.scm.url"))
-                connection.set(propertyOrEnv("gobley.projects.gradle.pom.scm.connection"))
-                developerConnection.set(propertyOrEnv("gobley.projects.gradle.pom.scm.developerConnection"))
+                url.set(propertyOrEnv("gobley.projects.gradle.pom.scm.url") ?: "https://github.com/holdxen/gobley")
+                connection.set(propertyOrEnv("gobley.projects.gradle.pom.scm.connection") ?: "scm:git:git://github.com/holdxen/gobley.git")
+                developerConnection.set(propertyOrEnv("gobley.projects.gradle.pom.scm.developerConnection") ?: "scm:git:ssh://github.com:holdxen/gobley.git")
             }
         }
     }
