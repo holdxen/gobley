@@ -35,16 +35,7 @@
     {%- endmatch %}
     {{ visibility() }}constructor(noHandle: NoHandle)
 
-    {% match obj.primary_constructor() -%}
-    {%- when Some(cons) -%}
-    {%-     if cons.is_async() -%}
-    // Note no constructor generated for this object as it is async.
-    {%     else -%}
-    {%- call kt::docstring(cons, 4) %}{% endcall %}
-    {{ visibility() }}constructor({% call kt::arg_list(cons, true) -%}{%- endcall -%}) : this(UniffiWithHandle, {% call kt::to_ffi_call(cons, 8) %}{% endcall %})
-    {%-     endif %}
-    {%- when None %}
-    {%- endmatch %}
+    {{ visibility() }}constructor(withHandle: UniffiWithHandle, handle: Long)
 
     {% match obj.primary_constructor() -%}
     {%- when Some(cons) -%}

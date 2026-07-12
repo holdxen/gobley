@@ -97,11 +97,18 @@ internal object {{ trait_impl }} {
         }
     }
 
-    internal val vtable = {{ vtable|ffi_type_name(ci) }}(
+    internal object uniffiClone: {{ "CallbackInterfaceClone"|ffi_callback_name }} {
+        override fun callback(handle: Long): Long {
+            return {{ ffi_converter_name }}.handleMap.clone(handle)
+        }
+    }
+
+    internal val vtable = {{ vtable|ffi_type_name_by_value(ci) }}(
+        uniffiFree,
+        uniffiClone,
         {%- for (ffi_callback, meth) in vtable_methods.iter() %}
         {{ meth.name()|var_name() }},
         {%- endfor %}
-        uniffiFree,
     )
 
     internal fun register(lib: UniffiLib) {

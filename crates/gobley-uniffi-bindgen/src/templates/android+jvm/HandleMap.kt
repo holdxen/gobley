@@ -13,6 +13,12 @@ internal class UniffiHandleMap<T: Any> {
         return handle
     }
 
+    // Clone a handle, creating a new one
+    internal fun clone(handle: Long): Long {
+        val obj = map[handle] ?: throw InternalException("UniffiHandleMap.clone: Invalid handle")
+        return insert(obj)
+    }
+
     // Get an object from the handle map
     internal fun get(handle: Long): T {
         return map[handle] ?: throw InternalException("UniffiHandleMap.get: Invalid handle")

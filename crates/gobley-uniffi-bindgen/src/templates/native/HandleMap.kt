@@ -26,6 +26,12 @@ internal class UniffiHandleMap<T: Any> {
         return syncAccess { map.remove(handle) } ?: throw InternalException("UniffiHandleMap.remove: Invalid handle")
     }
 
+    // Clone a handle, creating a new one
+    internal fun clone(handle: Long): Long {
+        val obj = syncAccess { map.get(handle) } ?: throw InternalException("UniffiHandleMap.clone: Invalid handle")
+        return insert(obj)
+    }
+
     internal fun <T> syncAccess(block: () -> T): T {
         mapLock.lock()
         try {

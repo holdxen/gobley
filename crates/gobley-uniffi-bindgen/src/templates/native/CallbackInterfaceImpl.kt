@@ -106,6 +106,10 @@ internal object {{ trait_impl }} {
         {{ ffi_converter_name }}.handleMap.remove(handle)
     }
 
+    internal fun uniffiClone(handle: Long): Long {
+        return {{ ffi_converter_name }}.handleMap.clone(handle)
+    }
+
     internal val vtable = nativeHeap.alloc<{{ci.namespace()}}.cinterop.{{ vtable|ffi_type_name(ci) }}> {
         {%- for (ffi_callback, meth) in vtable_methods.iter() %}
         {% if ffi_callback|ffi_callback_needs_casting_native -%}
@@ -134,6 +138,9 @@ internal object {{ trait_impl }} {
         {%- endfor %}
         this.uniffiFree = staticCFunction { handle: Long ->
             {{ trait_impl }}.uniffiFree(handle)
+        }
+        this.uniffiClone = staticCFunction { handle: Long ->
+            {{ trait_impl }}.uniffiClone(handle)
         }
     }.ptr
 
