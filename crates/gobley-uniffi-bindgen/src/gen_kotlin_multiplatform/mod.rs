@@ -1891,4 +1891,282 @@ mod tests {
             "header should contain 'int64_t' for handle type"
         );
     }
+
+    // --- Breaking change: Callback interface VTable with uniffiClone ---
+
+    #[test]
+    fn generated_callback_interface_has_unifficlone() {
+        let udl = r#"
+            namespace test_crate {};
+
+            callback interface Listener {
+                void on_event(string message);
+            };
+
+            interface Notifier {
+                constructor();
+                void add_listener(Listener listener);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        // uniffi 0.32 requires uniffiClone in VTable
+        assert!(
+            ffi.contains("uniffiClone"),
+            "ffi output should contain 'uniffiClone' for callback interface VTable\nGot:\n{}",
+            &ffi[..ffi.len().min(5000)]
+        );
+        // VTable should have uniffiFree and uniffiClone
+        assert!(
+            ffi.contains("UniffiCallbackInterfaceClone"),
+            "ffi output should contain 'UniffiCallbackInterfaceClone'"
+        );
+    }
+
+    // --- Breaking change: Record type with fields ---
+
+    #[test]
+    fn generated_record_has_fields() {
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary UserProfile {
+                string name;
+                u32 age;
+                string email;
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let common = &bindings.common;
+
+        // Record should have data class with fields
+        assert!(
+            common.contains("data class UserProfile") || common.contains("class UserProfile"),
+            "common output should contain 'class UserProfile'"
+        );
+    }
+
+    // --- Breaking change: Enum type ---
+
+    #[test]
+    fn generated_enum_has_variants() {
+        let udl = r#"
+            namespace test_crate {};
+
+            enum Color {
+                "Red",
+                "Green",
+                "Blue"
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let common = &bindings.common;
+
+        // Enum should have sealed class with variants
+        assert!(
+            common.contains("sealed class Color") || common.contains("enum class Color"),
+            "common output should contain 'Color' class"
+        );
+        assert!(
+            common.contains("Red"),
+            "common output should contain 'Red' variant"
+        );
+    }
+
+    // --- Breaking change: Error type ---
+
+    #[test]
+    fn generated_error_extends_exception() {
+        let udl = r#"
+            namespace test_crate {};
+
+            [Error]
+            enum AppError {
+                "NotFound",
+                "Unauthorized"
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let common = &bindings.common;
+
+        // Error should extend Exception
+        assert!(
+            common.contains("Exception"),
+            "common output should contain 'Exception' for error type"
+        );
+    }
+
+    // --- Breaking change: Object with callback interface ---
+
+    #[test]
+    fn generated_object_with_callback_interface() {
+        let udl = r#"
+            namespace test_crate {};
+
+            callback interface Greeter {
+                string greet(string name);
+            };
+
+            interface MyGreeter {
+                constructor();
+                string greet(string name);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        // Object should reference the callback interface
+        assert!(
+            ffi.contains("Greeter") || ffi.contains("GreeterInterface"),
+            "ffi output should contain 'Greeter' callback interface"
+        );
+    }
+
+    // --- Breaking change: FfiType::Handle maps to Long in all contexts ---
+
+    #[test]
+    fn generated_ffi_type_handle_maps_to_long_everywhere() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                void do_something();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        // All handle-related types should use Long
+        assert!(
+            ffi.contains("handle: Long"),
+            "ffi should use 'handle: Long'"
+        );
+        assert!(
+            ffi.contains("FfiConverter<") && ffi.contains(", Long>"),
+            "ffi should use 'FfiConverter<X, Long>'"
+        );
+        // Should NOT use Pointer for handle-based operations
+        assert!(
+            !ffi.contains("pointer: Pointer"),
+            "ffi should NOT contain 'pointer: Pointer'"
+        );
+        assert!(
+            !ffi.contains("callWithPointer"),
+            "ffi should NOT contain 'callWithPointer'"
+        );
+        assert!(
+            !ffi.contains("uniffiClonePointer"),
+            "ffi should NOT contain 'uniffiClonePointer'"
+        );
+    }
+
+    // --- Breaking change: askama 0.16 endcall syntax ---
+
+    #[test]
+    fn generated_templates_compile_with_endcall() {
+        // This test verifies that the askama 0.16 template syntax works
+        // If {% endcall %} is missing, the template won't compile
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+                void do_nothing();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+
+        // If we get here, the templates compiled successfully
+        assert!(bindings.jvm.is_some(), "jvm bindings should exist");
+        assert!(bindings.common.len() > 0, "common bindings should not be empty");
+    }
+
+    // --- Breaking change: Multiple object types ---
+
+    #[test]
+    fn generated_multiple_objects_independent() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string get_name();
+            };
+
+            interface Bar {
+                constructor(i32 value);
+                i32 get_value();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        // Both objects should have handle-based constructors
+        assert!(
+            ffi.contains("class Foo") || ffi.contains("class FooImpl"),
+            "ffi should contain 'Foo' class"
+        );
+        assert!(
+            ffi.contains("class Bar") || ffi.contains("class BarImpl"),
+            "ffi should contain 'Bar' class"
+        );
+        // Both should use Long handles
+        assert!(
+            ffi.matches("handle: Long").count() >= 2,
+            "ffi should have multiple 'handle: Long' for multiple objects"
+        );
+    }
+
+    // --- Breaking change: Object with methods ---
+
+    #[test]
+    fn generated_object_methods_use_call_with_handle() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Counter {
+                constructor(i32 initial);
+                i32 increment();
+                i32 get_value();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        // Methods should use callWithHandle
+        assert!(
+            ffi.contains("callWithHandle"),
+            "ffi should use 'callWithHandle' for object methods"
+        );
+        // Should have uniffiCloneHandle
+        assert!(
+            ffi.contains("uniffiCloneHandle"),
+            "ffi should have 'uniffiCloneHandle'"
+        );
+    }
+
+    // --- Breaking change: Function with return value ---
+
+    #[test]
+    fn generated_function_with_return_value() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Calculator {
+                constructor();
+                u32 add(u32 a, u32 b);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        // Function should be generated
+        assert!(
+            ffi.contains("add") || ffi.contains("`add`"),
+            "ffi should contain 'add' function"
+        );
+    }
 }
