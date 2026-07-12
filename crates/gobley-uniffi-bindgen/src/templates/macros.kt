@@ -15,12 +15,11 @@
 {%- macro to_ffi_call(func, indent) -%}
                         {%- match func.self_type() %}
                         {%- when Some(Type::Object { .. }) %}
-                        callWithPointer {
+                        callWithHandle {
 {{ " "|repeat(indent) }}    {% call to_raw_ffi_call(func, indent + 4) %}{% endcall %}
 {{ " "|repeat(indent) }}{{ '}' }}
                         {%- else -%}
-                        {%- call to_raw_ffi_call(func, indent) -%}{%- endcall %}
-                        {%- endmatch -%}
+                        {%- call to_raw_ffi_call(func, indent) -%}{% endcall %}{%- endmatch -%}
 {%- endmacro %}
 
 {%- macro to_raw_ffi_call(func, indent) -%}
@@ -118,9 +117,9 @@
                         uniffiRustCallAsync(
                             {%- match callable.self_type() %}
                             {%- when Some(Type::Object { .. }) %}
-{{ " "|repeat(indent) }}    callWithPointer { thisPtr ->
+{{ " "|repeat(indent) }}    callWithHandle { handle ->
 {{ " "|repeat(indent) }}        UniffiLib.{{ callable.ffi_func().name() }}(
-{{ " "|repeat(indent) }}            thisPtr,
+{{ " "|repeat(indent) }}            handle,
                                     {%- call arg_list_lowered(callable, indent + 12) %}{% endcall %}
 {{ " "|repeat(indent) }}        )
 {{ " "|repeat(indent) }}    },

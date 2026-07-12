@@ -155,3 +155,48 @@ impl CodeType for MapCodeType {
         }
     }
 }
+
+#[derive(Debug)]
+pub struct SetCodeType {
+    inner: Type,
+}
+
+impl SetCodeType {
+    pub fn new(inner: Type) -> Self {
+        Self { inner }
+    }
+    fn inner(&self) -> &Type {
+        &self.inner
+    }
+}
+
+impl CodeType for SetCodeType {
+    fn type_label(&self, ci: &ComponentInterface) -> String {
+        format!(
+            "Set<{}>",
+            super::KotlinCodeOracle.find(self.inner()).type_label(ci)
+        )
+    }
+
+    fn canonical_name(&self) -> String {
+        format!(
+            "Set{}",
+            super::KotlinCodeOracle.find(self.inner()).canonical_name()
+        )
+    }
+
+    fn literal(
+        &self,
+        literal: &DefaultValue,
+        _ci: &ComponentInterface,
+        _config: &Config,
+    ) -> Result<String> {
+        match literal {
+            DefaultValue::Literal(lit) => match lit {
+                Literal::EmptySequence => Ok("setOf()".into()),
+                _ => bail!("Invalid literal for Set type: {lit:?}"),
+            },
+            DefaultValue::Default => Ok("Default".to_string()),
+        }
+    }
+}

@@ -22,7 +22,7 @@
      * attempt to actually use an object constructed this way will fail as there is no
      * connected Rust object.
      */
-    {{ visibility() }}actual constructor(noPointer: NoPointer)
+    {{ visibility() }}actual constructor(noHandle: NoHandle)
 
     {%- match obj.primary_constructor() %}
     {%- when Some(cons) %}
@@ -31,7 +31,7 @@
     {%-     else %}
     {%- call kt::docstring(cons, 4) %}{% endcall %}
 
-    {{ visibility() }}actual constructor({% call kt::arg_list(cons, false) -%}{%- endcall %}) {
+    {{ visibility() }}actual constructor({% call kt::arg_list(cons, false) -%}{%- endcall %}) : this(UniffiWithHandle, {% call kt::to_ffi_call(cons, 8) %}{% endcall %}) {
         TODO()
     }
     {%-     endif %}

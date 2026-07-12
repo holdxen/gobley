@@ -935,11 +935,9 @@ impl<T: AsType> AsCodeType for T {
             } => Box::new(compounds::MapCodeType::new(*key_type, *value_type)),
             Type::Custom { name, .. } => Box::new(custom::CustomCodeType::new(name)),
             Type::Set { inner_type } => {
-                Box::new(compounds::SequenceCodeType::new(*inner_type))
+                Box::new(compounds::SetCodeType::new(*inner_type))
             }
-            Type::Box { inner_type } => {
-                Box::new(compounds::OptionalCodeType::new(*inner_type))
-            }
+            Type::Box { inner_type } => inner_type.as_codetype()
         }
     }
 }
@@ -1208,7 +1206,10 @@ mod filters {
                     .ok_or_else(|| to_askama_error(&format!("could not find enum '{name}'")))?,
                 ci,
             )?,
-            Type::Optional { inner_type } | Type::Sequence { inner_type } => {
+            Type::Optional { inner_type }
+            | Type::Sequence { inner_type }
+            | Type::Set { inner_type }
+            | Type::Box { inner_type } => {
                 serializable_type(inner_type, ci)?
             }
             Type::Map {
@@ -1547,5 +1548,347 @@ mod filters {
     pub fn repeat(string: &str, _: &dyn askama::Values, n: &i32) -> Result<String, askama::Error> {
         let n = usize::try_from(*n).unwrap_or_default();
         Ok(string.repeat(n))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mock_config() -> Config {
+        Config {
+            package_name: Some("test.package".to_string()),
+            cdylib_name: Some("test".to_string()),
+            kotlin_multiplatform: true,
+            kotlin_targets: vec![ConfigKotlinTarget::Jvm, ConfigKotlinTarget::Native],
+            ..Default::default()
+        }
+    }
+
+    // --- Type::Box tests ---
+
+    #[test]
+    fn type_box_maps_to_inner_codetype() {
+        // Type::Box { inner: UInt32 } should produce the same codetype as UInt32 directly
+        let box_type = Type::Box {
+            inner_type: Box::new(Type::UInt32),
+        };
+        let inner_type = Type::UInt32;
+
+        let ci = ComponentInterface::new("test");
+        let box_label = box_type.as_codetype().type_label(&ci);
+        let inner_label = inner_type.as_codetype().type_label(&ci);
+
+        assert_eq!(box_label, inner_label);
+        assert_eq!(box_label, "kotlin.UInt");
+    }
+
+    #[test]
+    fn type_box_with_string_maps_correctly() {
+        let box_type = Type::Box {
+            inner_type: Box::new(Type::String),
+        };
+        let ci = ComponentInterface::new("test");
+        let label = box_type.as_codetype().type_label(&ci);
+        assert_eq!(label, "kotlin.String");
+    }
+
+    #[test]
+    fn type_box_is_not_optional() {
+        // Type::Box should NOT produce an optional type (no `?` suffix)
+        let box_type = Type::Box {
+            inner_type: Box::new(Type::UInt32),
+        };
+        let opt_type = Type::Optional {
+            inner_type: Box::new(Type::UInt32),
+        };
+
+        let ci = ComponentInterface::new("test");
+        let box_label = box_type.as_codetype().type_label(&ci);
+        let opt_label = opt_type.as_codetype().type_label(&ci);
+
+        assert_eq!(box_label, "kotlin.UInt");
+        assert_eq!(opt_label, "kotlin.UInt?");
+        assert_ne!(box_label, opt_label);
+    }
+
+    #[test]
+    fn type_box_canonical_name_matches_inner() {
+        let box_type = Type::Box {
+            inner_type: Box::new(Type::Int64),
+        };
+        let inner_type = Type::Int64;
+
+        assert_eq!(
+            box_type.as_codetype().canonical_name(),
+            inner_type.as_codetype().canonical_name()
+        );
+    }
+
+    #[test]
+    fn type_box_ffi_converter_matches_inner() {
+        let box_type = Type::Box {
+            inner_type: Box::new(Type::Float64),
+        };
+        let inner_type = Type::Float64;
+
+        assert_eq!(
+            box_type.as_codetype().ffi_converter_name(),
+            inner_type.as_codetype().ffi_converter_name()
+        );
+    }
+
+    // --- Type::Set tests ---
+
+    #[test]
+    fn type_set_maps_to_set_codetype() {
+        let set_type = Type::Set {
+            inner_type: Box::new(Type::String),
+        };
+        let ci = ComponentInterface::new("test");
+        let label = set_type.as_codetype().type_label(&ci);
+        assert_eq!(label, "Set<kotlin.String>");
+    }
+
+    #[test]
+    fn type_set_differs_from_sequence() {
+        let set_type = Type::Set {
+            inner_type: Box::new(Type::UInt32),
+        };
+        let seq_type = Type::Sequence {
+            inner_type: Box::new(Type::UInt32),
+        };
+
+        let ci = ComponentInterface::new("test");
+        let set_label = set_type.as_codetype().type_label(&ci);
+        let seq_label = seq_type.as_codetype().type_label(&ci);
+
+        assert_eq!(set_label, "Set<kotlin.UInt>");
+        assert_eq!(seq_label, "List<kotlin.UInt>");
+        assert_ne!(set_label, seq_label);
+    }
+
+    #[test]
+    fn type_set_canonical_name() {
+        let set_type = Type::Set {
+            inner_type: Box::new(Type::Boolean),
+        };
+        assert_eq!(set_type.as_codetype().canonical_name(), "SetBoolean");
+    }
+
+    #[test]
+    fn type_set_ffi_converter_name() {
+        let set_type = Type::Set {
+            inner_type: Box::new(Type::String),
+        };
+        assert_eq!(
+            set_type.as_codetype().ffi_converter_name(),
+            "FfiConverterSetString"
+        );
+    }
+
+    #[test]
+    fn type_set_with_nested_type() {
+        let set_type = Type::Set {
+            inner_type: Box::new(Type::Optional {
+                inner_type: Box::new(Type::Int32),
+            }),
+        };
+        let ci = ComponentInterface::new("test");
+        let label = set_type.as_codetype().type_label(&ci);
+        assert_eq!(label, "Set<kotlin.Int?>");
+    }
+
+    // --- Integration: generate_bindings and verify output ---
+
+    fn generate_test_bindings(udl: &str) -> MultiplatformBindings {
+        let ci = ComponentInterface::from_webidl(udl, "test_crate").unwrap();
+        let config = mock_config();
+        generate_bindings(&config, &ci).unwrap()
+    }
+
+    #[test]
+    fn generated_bindings_use_handle_long_not_pointer() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        // Should use Long handle, not Pointer
+        assert!(
+            ffi.contains("handle: Long"),
+            "ffi output should contain 'handle: Long'\nGot:\n{}",
+            &ffi[..ffi.len().min(2000)]
+        );
+        assert!(
+            ffi.contains("protected val handle: Long"),
+            "ffi output should contain 'protected val handle: Long'"
+        );
+        assert!(
+            ffi.contains("callWithHandle"),
+            "ffi output should contain 'callWithHandle'"
+        );
+        assert!(
+            ffi.contains("uniffiCloneHandle"),
+            "ffi output should contain 'uniffiCloneHandle'"
+        );
+        assert!(
+            ffi.contains("FfiConverter<"),
+            "ffi output should contain 'FfiConverter<'"
+        );
+        // Should NOT contain old Pointer-based patterns
+        assert!(
+            !ffi.contains("pointer: Pointer"),
+            "ffi output should NOT contain 'pointer: Pointer'"
+        );
+        assert!(
+            !ffi.contains("callWithPointer"),
+            "ffi output should NOT contain 'callWithPointer'"
+        );
+        assert!(
+            !ffi.contains("uniffiClonePointer"),
+            "ffi output should NOT contain 'uniffiClonePointer'"
+        );
+        assert!(
+            !ffi.contains(", Pointer>"),
+            "ffi output should NOT contain ', Pointer>'"
+        );
+    }
+
+    #[test]
+    fn generated_bindings_use_no_handle_not_no_pointer() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        assert!(
+            ffi.contains("NoHandle"),
+            "ffi output should contain 'NoHandle'"
+        );
+        assert!(
+            !ffi.contains("NoPointer"),
+            "ffi output should NOT contain 'NoPointer'"
+        );
+    }
+
+    #[test]
+    fn generated_bindings_use_ffi_converter_long() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        assert!(
+            ffi.contains("FfiConverter<Foo, Long>") || ffi.contains("FfiConverter<FooInterface, Long>"),
+            "ffi output should use FfiConverter with Long, got:\n{}",
+            &ffi[..ffi.len().min(3000)]
+        );
+    }
+
+    #[test]
+    fn generated_bindings_clean_action_uses_handle() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        assert!(
+            ffi.contains("UniffiCleanAction"),
+            "ffi output should contain 'UniffiCleanAction'"
+        );
+        assert!(
+            !ffi.contains("UniffiPointerDestroyer"),
+            "ffi output should NOT contain 'UniffiPointerDestroyer'"
+        );
+    }
+
+    #[test]
+    fn generated_common_uses_no_handle_and_uniffi_with_handle() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let common = &bindings.common;
+
+        assert!(
+            common.contains("NoHandle"),
+            "common output should contain 'NoHandle'"
+        );
+        assert!(
+            common.contains("UniffiWithHandle"),
+            "common output should contain 'UniffiWithHandle'"
+        );
+        assert!(
+            !common.contains("NoPointer"),
+            "common output should NOT contain 'NoPointer'"
+        );
+    }
+
+    #[test]
+    fn generated_macros_use_call_with_handle() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let ffi = bindings.jvm.as_ref().expect("jvm bindings should exist");
+
+        assert!(
+            ffi.contains("callWithHandle"),
+            "ffi output should contain 'callWithHandle'"
+        );
+        assert!(
+            !ffi.contains("callWithPointer"),
+            "ffi output should NOT contain 'callWithPointer'"
+        );
+    }
+
+    #[test]
+    fn generated_header_uses_int64_t_for_handle() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let header = bindings.header.as_ref().expect("header should exist");
+
+        assert!(
+            header.contains("int64_t"),
+            "header should contain 'int64_t' for handle type"
+        );
     }
 }
