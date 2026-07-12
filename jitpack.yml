@@ -2,7 +2,7 @@
 #
 # This fork is at https://github.com/holdxen/gobley
 #
-jdk: 17
+jdk: openjdk17
 install:
   - ./gradlew
       :build-logic:gobley-gradle:publishToMavenLocal
