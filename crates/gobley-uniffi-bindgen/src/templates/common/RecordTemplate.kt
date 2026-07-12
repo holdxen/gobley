@@ -17,6 +17,9 @@
     {% if !loop.last %}, {% endif %}
     {%- endfor %}
 ) {% if contains_object_references %}: Disposable {% endif %}{
+    {%- for meth in rec.methods() -%}
+    {%- call kt::func_decl_with_body("", meth, 4) -%}{%- endcall %}
+    {%- endfor %}
     {%- if should_generate_equals_hash_code -%}
     {%- call kt::generate_equals_hash_code(rec, type_name, 4) -%}{%- endcall %}
     {%- endif -%}

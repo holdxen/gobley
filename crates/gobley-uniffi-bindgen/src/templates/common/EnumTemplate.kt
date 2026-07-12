@@ -19,6 +19,11 @@
     {%- call kt::docstring(variant, 4) %}{% endcall %}
     {{ variant|variant_name(config) }}{% if loop.last %};{% else %},{% endif %}
     {%- endfor %}
+
+    {%- for meth in e.methods() -%}
+    {%- call kt::func_decl_with_body("", meth, 4) -%}{%- endcall %}
+    {%- endfor %}
+
     {{ visibility() }}companion object
 }
 {% when Some(variant_discr_type) %}
@@ -28,6 +33,11 @@
     {%- call kt::docstring(variant, 4) %}{% endcall %}
     {{ variant|variant_name(config) }}({{ e|variant_discr_literal(loop.index0) }}){% if loop.last %};{% else %},{% endif %}
     {%- endfor %}
+
+    {%- for meth in e.methods() -%}
+    {%- call kt::func_decl_with_body("", meth, 4) -%}{%- endcall %}
+    {%- endfor %}
+
     {{ visibility() }}companion object
 }
 {% endmatch %}
@@ -70,6 +80,12 @@
     }
     {%- endif %}
     {% endfor %}
+
+    {%- for meth in e.methods() -%}
+    {%- call kt::func_decl_with_body("", meth, 4) -%}{%- endcall %}
+    {%- endfor %}
+
+    {{ visibility() }}companion object
 }
 
 {% endif %}

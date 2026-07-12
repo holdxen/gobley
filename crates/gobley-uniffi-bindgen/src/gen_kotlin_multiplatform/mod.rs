@@ -2924,4 +2924,58 @@ mod tests {
             "bindings should be generated"
         );
     }
+
+    // --- Record with methods (uniffi 0.32 feature) ---
+
+    #[test]
+    fn generated_record_with_methods() {
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary Point {
+                double x;
+                double y;
+            };
+
+            namespace test_crate {
+                Point double(Point point);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let common = &bindings.common;
+
+        // Record should be generated
+        assert!(
+            common.contains("Point"),
+            "should have Point record"
+        );
+    }
+
+    // --- Enum with methods (uniffi 0.32 feature) ---
+
+    #[test]
+    fn generated_enum_with_methods() {
+        let udl = r#"
+            namespace test_crate {};
+
+            enum Direction {
+                "North",
+                "South",
+                "East",
+                "West"
+            };
+
+            namespace test_crate {
+                Direction opposite(Direction d);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let common = &bindings.common;
+
+        // Enum should be generated
+        assert!(
+            common.contains("Direction"),
+            "should have Direction enum"
+        );
+    }
 }
