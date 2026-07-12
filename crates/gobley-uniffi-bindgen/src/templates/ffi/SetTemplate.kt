@@ -1,4 +1,3 @@
-
 {%- let inner_type_name = inner_type|type_name(ci) %}
 
 {{ visibility() }}object {{ ffi_converter_name }}: FfiConverterRustBuffer<Set<{{ inner_type_name }}>> {
@@ -12,9 +11,9 @@
     }
 
     override fun allocationSize(value: Set<{{ inner_type_name }}>): ULong {
-        val sizeForLength = 4UL
-        val sizeForItems = value.sumOf { {{ inner_type|allocation_size_fn }}(it) }
-        return sizeForLength + sizeForItems
+        val spaceForLength = 4UL
+        val spaceForItems = value.sumOf { {{ inner_type|allocation_size_fn }}(it) }
+        return spaceForLength + spaceForItems
     }
 
     override fun write(value: Set<{{ inner_type_name }}>, buf: ByteBuffer) {
