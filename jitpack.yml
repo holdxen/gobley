@@ -11,7 +11,7 @@ install:
       :build-logic:gobley-gradle-uniffi:publishToMavenLocal
       --no-configuration-cache
       -x test
-      -Pversion=$VERSION
+      -Pgobley.publish.version=$VERSION
       -Pgobley.publish.group=com.github.holdxen
       -Pgobley.projects.gradleTests=false
       -Pgobley.projects.uniffiTests=false
