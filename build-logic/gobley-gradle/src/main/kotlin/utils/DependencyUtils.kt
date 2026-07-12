@@ -281,7 +281,12 @@ object DependencyUtils {
             val currentBaseVersion = GradleVersion.current().baseVersion
             return when {
                 currentBaseVersion >= GradleVersion.version("8.11") -> path
-                else -> dependencyProject.path
+                else -> {
+                    val dependencyProject = ProjectDependency::class.java
+                        .getMethod("getDependencyProject")
+                        .invoke(this) as Project
+                    dependencyProject.path
+                }
             }
         }
 }
