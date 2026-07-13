@@ -20,6 +20,7 @@ sealed class CargoBinaryCrateSource : Serializable {
     data class Git(
         val repository: String,
         val commit: Commit? = null,
+        val packageName: String? = null,
     ) : CargoBinaryCrateSource(), Serializable {
         sealed class Commit : Serializable {
             data class Branch(val branch: String) : Commit(), Serializable

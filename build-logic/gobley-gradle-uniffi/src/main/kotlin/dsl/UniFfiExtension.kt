@@ -83,8 +83,9 @@ abstract class UniFfiExtension(internal val project: Project) {
      * Download and install the bindgen from the given Git repository. If [commit] is specified, `cargo install` will
      * install the bindgen of that [commit].
      */
+    @OptIn(InternalGobleyGradleApi::class)
     fun bindgenFromGit(repository: String, commit: CargoBinaryCrateSource.Git.Commit? = null) {
-        bindgenSource.set(CargoBinaryCrateSource.Git(repository, commit))
+        bindgenSource.set(CargoBinaryCrateSource.Git(repository, commit, BuildConfig.UNIFFI_BINDGEN_CRATE))
     }
 
     /**

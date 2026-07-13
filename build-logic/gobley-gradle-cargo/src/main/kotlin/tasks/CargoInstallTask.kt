@@ -66,6 +66,9 @@ abstract class CargoInstallTask : CargoTask() {
                 is CargoBinaryCrateSource.Path -> arguments("--path", source.path)
                 is CargoBinaryCrateSource.Git -> {
                     arguments("--git", source.repository)
+                    if (source.packageName != null) {
+                        arguments(source.packageName)
+                    }
                     when (source.commit) {
                         is CargoBinaryCrateSource.Git.Commit.Branch -> arguments(
                             "--branch",
