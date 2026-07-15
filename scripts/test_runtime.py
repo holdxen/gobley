@@ -128,16 +128,6 @@ def generate_bindings(bindgen, cdylib, crate_path, config_toml, out_dir):
     for f in kt_files:
         print(f"     {f.relative_to(out_dir)}")
 
-    # Workaround: rename enum methods that conflict with Kotlin built-in properties.
-    # E.g. `fun name()` on an enum conflicts with Kotlin's `Enum.name` property.
-    # This is a known gobley codegen issue - the bindgen should detect and rename these.
-    for f in kt_files:
-        content = f.read_text()
-        if "enum class" in content and "fun `name`" in content:
-            content = content.replace("fun `name`", "fun `rustName`")
-            f.write_text(content)
-            print(f"  [workaround] Renamed 'name' -> 'rustName' in {f.name} (enum method conflict)")
-
     return kt_files
 
 
@@ -247,6 +237,11 @@ fun main() {
     println("\nEnum methods:")
     test("Direction.opposite") {
         assert(Direction.NORTH.opposite() == Direction.SOUTH)
+    }
+    // Verify enum method name conflict fix: 'name' was renamed to 'rustName'
+    // by fn_name() filter to avoid conflict with Kotlin's built-in Enum.name
+    test("Direction.rustName (renamed from 'name')") {
+        assert(Direction.NORTH.rustName() == "North")
     }
 
     // ─── Sealed enum methods ───
