@@ -322,3 +322,105 @@ fn proc_macro_common_has_no_ffi_calls() {
         "common must not contain FfiConverter\nGot:\n{common}"
     );
 }
+
+// ─── Rename tests ────────────────────────────────────────────────────────────
+
+#[test]
+fn proc_macro_renamed_record_type() {
+    let lib = build_fixture_cdylib();
+    let (common, jvm) = generate_kmp_bindings(&lib);
+
+    // #[uniffi(name = "RenamedPoint")] on PrivatePoint should generate RenamedPoint
+    assert!(
+        common.contains("data class RenamedPoint"),
+        "common should have 'data class RenamedPoint', not PrivatePoint\nGot:\n{common}"
+    );
+    assert!(
+        !common.contains("PrivatePoint"),
+        "common should NOT have the original Rust name 'PrivatePoint'\nGot:\n{common}"
+    );
+    // FfiConverter should use the renamed name
+    assert!(
+        jvm.contains("FfiConverterTypeRenamedPoint"),
+        "jvm should have FfiConverterTypeRenamedPoint\nGot:\n{jvm}"
+    );
+}
+
+#[test]
+fn proc_macro_renamed_enum_type() {
+    let lib = build_fixture_cdylib();
+    let (common, _jvm) = generate_kmp_bindings(&lib);
+
+    // #[uniffi(name = "RenamedStatus")] on InternalStatus should generate RenamedStatus
+    assert!(
+        common.contains("enum class RenamedStatus"),
+        "common should have 'enum class RenamedStatus', not InternalStatus\nGot:\n{common}"
+    );
+    assert!(
+        !common.contains("InternalStatus"),
+        "common should NOT have the original Rust name 'InternalStatus'\nGot:\n{common}"
+    );
+}
+
+#[test]
+fn proc_macro_renamed_object_methods() {
+    let lib = build_fixture_cdylib();
+    let (_common, jvm) = generate_kmp_bindings(&lib);
+
+    // #[uniffi::method(name = "compute")] on add() should generate "compute"
+    assert!(
+        jvm.contains("`compute`") || jvm.contains("compute("),
+        "jvm should have renamed method 'compute' (not 'add')\nGot:\n{jvm}"
+    );
+    // #[uniffi::method(name = "result")] on get_value() should generate "result"
+    assert!(
+        jvm.contains("`result`") || jvm.contains("result("),
+        "jvm should have renamed method 'result' (not 'get_value')\nGot:\n{jvm}"
+    );
+    // InternalCalc should be the object name (no type-level rename in this fixture)
+    assert!(
+        jvm.contains("InternalCalc"),
+        "jvm should have InternalCalc object\nGot:\n{jvm}"
+    );
+}
+
+#[test]
+fn proc_macro_renamed_function() {
+    let lib = build_fixture_cdylib();
+    let (common, jvm) = generate_kmp_bindings(&lib);
+
+    // #[uniffi::export(name = "calculate_sum")] on internal_sum should generate calculate_sum
+    assert!(
+        common.contains("calculateSum") || common.contains("calculate_sum"),
+        "common should have renamed function 'calculateSum'\nGot:\n{common}"
+    );
+    assert!(
+        !common.contains("internalSum") && !common.contains("internal_sum"),
+        "common should NOT have the original Rust name 'internal_sum'\nGot:\n{common}"
+    );
+    assert!(
+        jvm.contains("calculateSum") || jvm.contains("calculate_sum"),
+        "jvm should have renamed function 'calculateSum'\nGot:\n{jvm}"
+    );
+}
+
+#[test]
+fn proc_macro_renamed_record_fields() {
+    let lib = build_fixture_cdylib();
+    let (common, _jvm) = generate_kmp_bindings(&lib);
+
+    // #[uniffi(name = "configName")] on internal_name field
+    assert!(
+        common.contains("configName"),
+        "common should have renamed field 'configName'\nGot:\n{common}"
+    );
+    assert!(
+        !common.contains("internalName") && !common.contains("internal_name"),
+        "common should NOT have the original field name 'internal_name'\nGot:\n{common}"
+    );
+    // #[uniffi(name = "configValue")] on internal_value field
+    assert!(
+        common.contains("configValue"),
+        "common should have renamed field 'configValue'\nGot:\n{common}"
+    );
+}

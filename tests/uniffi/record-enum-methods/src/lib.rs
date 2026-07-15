@@ -146,3 +146,89 @@ fn create_point(x: f64, y: f64) -> Point {
 fn point_distance(a: &Point, b: &Point) -> f64 {
     a.distance_to(b)
 }
+
+// ─── Rename tests: #[uniffi(name = "...")] ───
+
+// Record with renamed type
+#[derive(uniffi::Record, Debug)]
+#[uniffi(name = "RenamedPoint")]
+pub struct PrivatePoint {
+    pub x: f64,
+    pub y: f64,
+}
+
+// Record with renamed method
+#[derive(uniffi::Record, Debug)]
+pub struct Vector2D {
+    pub dx: f64,
+    pub dy: f64,
+}
+
+#[uniffi::export]
+impl Vector2D {
+    fn length(&self) -> f64 {
+        (self.dx * self.dx + self.dy * self.dy).sqrt()
+    }
+
+    fn scale(&self, factor: f64) -> Vector2D {
+        Vector2D {
+            dx: self.dx * factor,
+            dy: self.dy * factor,
+        }
+    }
+}
+
+// Enum with renamed type
+#[derive(uniffi::Enum, Debug)]
+#[uniffi(name = "RenamedStatus")]
+pub enum InternalStatus {
+    Active,
+    Inactive,
+}
+
+// Enum with renamed variant (via field-level rename is not supported for enums,
+// but the enum type itself can be renamed)
+
+// Renamed top-level function
+#[uniffi::export(name = "calculate_sum")]
+fn internal_sum(a: i32, b: i32) -> i32 {
+    a + b
+}
+
+// ─── Object with renamed type and methods ───
+
+#[derive(uniffi::Object)]
+pub struct InternalCalc {
+    value: std::sync::Mutex<f64>,
+}
+
+#[uniffi::export]
+impl InternalCalc {
+    #[uniffi::constructor]
+    fn new(initial: f64) -> Arc<Self> {
+        Arc::new(Self {
+            value: std::sync::Mutex::new(initial),
+        })
+    }
+
+    #[uniffi::method(name = "compute")]
+    fn add(&self, amount: f64) -> f64 {
+        let mut v = self.value.lock().unwrap();
+        *v += amount;
+        *v
+    }
+
+    #[uniffi::method(name = "result")]
+    fn get_value(&self) -> f64 {
+        *self.value.lock().unwrap()
+    }
+}
+
+// Record with renamed field
+#[derive(uniffi::Record, Debug)]
+pub struct Config {
+    #[uniffi(name = "configName")]
+    pub internal_name: String,
+    #[uniffi(name = "configValue")]
+    pub internal_value: i32,
+}
