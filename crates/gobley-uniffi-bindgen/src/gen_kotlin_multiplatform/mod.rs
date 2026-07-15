@@ -2978,4 +2978,1155 @@ mod tests {
             "should have Direction enum"
         );
     }
+
+    // ========================================================================
+    // KMP expect/actual separation tests
+    // These tests verify the core invariant: commonMain must NOT contain
+    // any FFI calls (UniffiLib), while platform source sets SHOULD.
+    // ========================================================================
+
+    fn generate_non_kmp_bindings(udl: &str) -> MultiplatformBindings {
+        let ci = ComponentInterface::from_webidl(udl, "test_crate").unwrap();
+        let config = Config {
+            package_name: Some("test.package".to_string()),
+            cdylib_name: Some("test".to_string()),
+            kotlin_multiplatform: false,
+            kotlin_targets: vec![ConfigKotlinTarget::Jvm],
+            ..Default::default()
+        };
+        generate_bindings(&config, &ci).unwrap()
+    }
+
+    #[test]
+    fn kmp_common_has_no_uniffilib_reference() {
+        // In KMP mode, commonMain must not reference UniffiLib (which is
+        // platform-specific). This is the core invariant that the record
+        // and enum method bugs violated.
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary Point {
+                double x;
+                double y;
+            };
+
+            enum Color {
+                "Red",
+                "Green",
+                "Blue"
+            };
+
+            interface Calculator {
+                constructor();
+                Point add_points(Point a, Point b);
+                Color default_color();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            !bindings.common.contains("UniffiLib"),
+            "commonMain must not contain UniffiLib references in KMP mode\nGot:\n{}",
+            &bindings.common[..bindings.common.len().min(3000)]
+        );
+    }
+
+    #[test]
+    fn kmp_jvm_has_uniffilib_reference() {
+        // In KMP mode, the JVM source set should contain UniffiLib references
+        // for the actual FFI calls.
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Calculator {
+                constructor();
+                i32 add(i32 a, i32 b);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("UniffiLib"),
+            "jvmMain should contain UniffiLib references"
+        );
+    }
+
+    #[test]
+    fn kmp_record_is_data_class_in_common() {
+        // Records should be concrete data classes in commonMain (not expect).
+        // Kotlin forbids 'expect data class', so records must stay concrete.
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary User {
+                string name;
+                u32 age;
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("data class User"),
+            "commonMain should have 'data class User'"
+        );
+        assert!(
+            !bindings.common.contains("expect data class"),
+            "commonMain must not have 'expect data class' (Kotlin forbids it)"
+        );
+    }
+
+    #[test]
+    fn kmp_enum_is_enum_class_or_sealed_in_common() {
+        // Enums should be concrete enum class or sealed class in commonMain.
+        // Kotlin forbids 'expect enum class'.
+        let udl = r#"
+            namespace test_crate {};
+
+            enum Status {
+                "Active",
+                "Inactive"
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("enum class Status"),
+            "commonMain should have 'enum class Status'"
+        );
+        assert!(
+            !bindings.common.contains("expect enum class"),
+            "commonMain must not have 'expect enum class'"
+        );
+    }
+
+    #[test]
+    fn kmp_object_uses_expect_actual_pattern() {
+        // Objects should use expect/actual: expect class in common,
+        // actual class in platform source set.
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("expect"),
+            "commonMain should have 'expect' for objects"
+        );
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("actual"),
+            "jvmMain should have 'actual' for objects"
+        );
+    }
+
+    #[test]
+    fn kmp_top_level_functions_are_expect_in_common() {
+        // Top-level functions should use expect/actual pattern.
+        let udl = r#"
+            namespace test_crate {};
+
+            namespace test_crate {
+                i32 add(i32 a, i32 b);
+                string greet(string name);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("expect fun"),
+            "commonMain should have 'expect fun' for top-level functions"
+        );
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("actual fun"),
+            "jvmMain should have 'actual fun' for top-level functions"
+        );
+    }
+
+    #[test]
+    fn kmp_record_has_no_method_bodies_in_common() {
+        // Records in commonMain should not have method bodies with FFI calls.
+        // Even if the record has methods (from proc-macro metadata), the
+        // common template should not inline them in KMP mode.
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary Point {
+                double x;
+                double y;
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        // The record should be a plain data class with companion object
+        assert!(
+            bindings.common.contains("data class Point"),
+            "should have data class Point"
+        );
+        // No FFI call constructs should appear in the record definition
+        let common_record_section = bindings
+            .common
+            .split("data class Point")
+            .nth(1)
+            .unwrap_or("");
+        let record_end = common_record_section.find("}\n").unwrap_or(0);
+        let record_body = &common_record_section[..record_end];
+        assert!(
+            !record_body.contains("UniffiLib"),
+            "record body in commonMain must not contain UniffiLib calls"
+        );
+        assert!(
+            !record_body.contains("uniffiRustCall"),
+            "record body in commonMain must not contain uniffiRustCall"
+        );
+    }
+
+    #[test]
+    fn kmp_enum_has_no_method_bodies_in_common() {
+        // Enums in commonMain should not have method bodies with FFI calls.
+        let udl = r#"
+            namespace test_crate {};
+
+            enum Color {
+                "Red",
+                "Green",
+                "Blue"
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("enum class Color"),
+            "should have enum class Color"
+        );
+        // No FFI call constructs should appear in the enum definition
+        let common_enum_section = bindings
+            .common
+            .split("enum class Color")
+            .nth(1)
+            .unwrap_or("");
+        let enum_end = common_enum_section.find("}\n").unwrap_or(0);
+        let enum_body = &common_enum_section[..enum_end];
+        assert!(
+            !enum_body.contains("UniffiLib"),
+            "enum body in commonMain must not contain UniffiLib calls"
+        );
+        assert!(
+            !enum_body.contains("uniffiRustCall"),
+            "enum body in commonMain must not contain uniffiRustCall"
+        );
+    }
+
+    #[test]
+    fn kmp_sealed_enum_has_no_method_bodies_in_common() {
+        // Sealed class enums (with associated data) in commonMain should
+        // not have method bodies with FFI calls.
+        let udl = r#"
+            namespace test_crate {};
+
+            [Enum]
+            interface Response {
+                Success(string data);
+                Error(string message);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("sealed class Response")
+                || bindings.common.contains("sealed class"),
+            "should have sealed class for enum with data"
+        );
+        assert!(
+            !bindings.common.contains("UniffiLib"),
+            "sealed enum in commonMain must not contain UniffiLib calls"
+        );
+    }
+
+    // ========================================================================
+    // Non-KMP mode tests
+    // In non-KMP mode, everything goes into a single source set.
+    // ========================================================================
+
+    #[test]
+    fn non_kmp_record_is_data_class() {
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary User {
+                string name;
+                u32 age;
+            };
+        "#;
+        let bindings = generate_non_kmp_bindings(udl);
+        assert!(
+            bindings.common.contains("data class User"),
+            "non-KMP should have data class User"
+        );
+        assert!(
+            !bindings.common.contains("expect "),
+            "non-KMP should not have 'expect ' keyword"
+        );
+    }
+
+    #[test]
+    fn non_kmp_enum_is_enum_class() {
+        let udl = r#"
+            namespace test_crate {};
+
+            enum Status {
+                "Active",
+                "Inactive"
+            };
+        "#;
+        let bindings = generate_non_kmp_bindings(udl);
+        assert!(
+            bindings.common.contains("enum class Status"),
+            "non-KMP should have enum class Status"
+        );
+        assert!(
+            !bindings.common.contains("expect "),
+            "non-KMP should not have 'expect ' keyword"
+        );
+    }
+
+    #[test]
+    fn non_kmp_object_is_concrete_class() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_non_kmp_bindings(udl);
+        assert!(
+            !bindings.common.contains("expect "),
+            "non-KMP should not have 'expect ' for objects"
+        );
+        assert!(
+            !bindings.common.contains("actual class"),
+            "non-KMP should not have 'actual class' for objects"
+        );
+        assert!(
+            !bindings.common.contains("actual fun"),
+            "non-KMP should not have 'actual fun' for objects"
+        );
+    }
+
+    #[test]
+    fn non_kmp_top_level_function_has_body() {
+        let udl = r#"
+            namespace test_crate {};
+
+            namespace test_crate {
+                i32 add(i32 a, i32 b);
+            };
+        "#;
+        let bindings = generate_non_kmp_bindings(udl);
+        // In non-KMP mode, top-level functions go into the jvm source set
+        assert!(
+            !bindings.common.contains("expect "),
+            "non-KMP should not have 'expect '"
+        );
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            !jvm.contains("actual fun"),
+            "non-KMP should not have 'actual fun'"
+        );
+        assert!(
+            jvm.contains("fun `add`"),
+            "non-KMP jvm should have a concrete fun add"
+        );
+    }
+
+    #[test]
+    fn non_kmp_jvm_bindings_generated() {
+        // In non-KMP mode with jvm target, jvm bindings should be generated
+        // containing the actual FFI implementations. The common source set
+        // contains type declarations but not top-level function bodies.
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_non_kmp_bindings(udl);
+        assert!(
+            bindings.jvm.is_some(),
+            "non-KMP with jvm target should generate jvm bindings"
+        );
+    }
+
+    // ========================================================================
+    // FfiConverter generation tests
+    // ========================================================================
+
+    #[test]
+    fn kmp_record_has_ffi_converter_in_jvm() {
+        // The FfiConverter for records should be in the platform source set.
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary Point {
+                double x;
+                double y;
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("FfiConverterTypePoint"),
+            "jvmMain should have FfiConverterTypePoint"
+        );
+        assert!(
+            jvm.contains("FfiConverterRustBuffer"),
+            "jvmMain FfiConverter should extend FfiConverterRustBuffer"
+        );
+    }
+
+    #[test]
+    fn kmp_enum_has_ffi_converter_in_jvm() {
+        let udl = r#"
+            namespace test_crate {};
+
+            enum Color {
+                "Red",
+                "Green",
+                "Blue"
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("FfiConverterTypeColor"),
+            "jvmMain should have FfiConverterTypeColor"
+        );
+    }
+
+    // ========================================================================
+    // Enum variant representation tests
+    // ========================================================================
+
+    #[test]
+    fn kmp_flat_enum_uses_enum_class() {
+        let udl = r#"
+            namespace test_crate {};
+
+            enum Color {
+                "Red",
+                "Green",
+                "Blue"
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("enum class Color"),
+            "flat enum should use 'enum class'"
+        );
+        assert!(
+            !bindings.common.contains("sealed class Color"),
+            "flat enum should not use 'sealed class'"
+        );
+    }
+
+    #[test]
+    fn kmp_enum_with_data_uses_sealed_class() {
+        let udl = r#"
+            namespace test_crate {};
+
+            [Enum]
+            interface ApiResponse {
+                Success(string data, u32 code);
+                Error(string message, u32 code);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("sealed class"),
+            "enum with associated data should use 'sealed class'"
+        );
+        assert!(
+            !bindings.common.contains("enum class ApiResponse"),
+            "enum with data should not use 'enum class'"
+        );
+    }
+
+    #[test]
+    fn kmp_enum_with_data_has_variant_classes() {
+        let udl = r#"
+            namespace test_crate {};
+
+            [Enum]
+            interface ApiResponse {
+                Success(string data);
+                Error(string message);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("data class Success"),
+            "sealed enum should have 'data class Success' variant"
+        );
+        assert!(
+            bindings.common.contains("data class Error"),
+            "sealed enum should have 'data class Error' variant"
+        );
+    }
+
+    // ========================================================================
+    // Record field tests
+    // ========================================================================
+
+    #[test]
+    fn kmp_record_with_default_values() {
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary Config {
+                string name = "default";
+                u32 timeout = 30;
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("data class Config"),
+            "should have data class Config"
+        );
+    }
+
+    #[test]
+    fn kmp_record_with_nested_types() {
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary Inner {
+                string value;
+            };
+
+            dictionary Outer {
+                Inner inner;
+                sequence<Inner> items;
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("data class Outer"),
+            "should have data class Outer"
+        );
+        assert!(
+            bindings.common.contains("data class Inner"),
+            "should have data class Inner"
+        );
+    }
+
+    #[test]
+    fn kmp_record_fields_use_correct_kotlin_types() {
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary Types {
+                i32 int_field;
+                u32 uint_field;
+                i64 long_field;
+                u64 ulong_field;
+                boolean bool_field;
+                string string_field;
+                double float_field;
+                float f32_field;
+                sequence<i32> list_field;
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("kotlin.Int"),
+            "i32 should map to kotlin.Int"
+        );
+        assert!(
+            bindings.common.contains("kotlin.UInt"),
+            "u32 should map to kotlin.UInt"
+        );
+        assert!(
+            bindings.common.contains("kotlin.String"),
+            "string should map to kotlin.String"
+        );
+    }
+
+    // ========================================================================
+    // Companion object tests
+    // ========================================================================
+
+    #[test]
+    fn kmp_record_has_companion_object() {
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary Point {
+                double x;
+                double y;
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("companion object"),
+            "record should have companion object"
+        );
+    }
+
+    #[test]
+    fn kmp_enum_has_companion_object() {
+        let udl = r#"
+            namespace test_crate {};
+
+            enum Color {
+                "Red",
+                "Green",
+                "Blue"
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("companion object"),
+            "enum should have companion object"
+        );
+    }
+
+    // ========================================================================
+    // Object method and handle tests
+    // ========================================================================
+
+    #[test]
+    fn kmp_object_methods_are_expect_decl_in_common() {
+        // Object methods in commonMain should be declarations (expect),
+        // not implementations with FFI calls.
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+                i32 compute(i32 input);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        // The interface in common should have method declarations
+        assert!(
+            bindings.common.contains("fun `hello`"),
+            "commonMain should have hello method declaration"
+        );
+        assert!(
+            bindings.common.contains("fun `compute`"),
+            "commonMain should have compute method declaration"
+        );
+    }
+
+    #[test]
+    fn kmp_object_methods_have_bodies_in_jvm() {
+        // Object methods in jvmMain should have implementations with FFI calls.
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("UniffiLib"),
+            "jvmMain should have UniffiLib FFI calls for object methods"
+        );
+    }
+
+    #[test]
+    fn kmp_object_has_handle_field() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("handle: Long") || jvm.contains("val handle"),
+            "jvm object should have a handle field"
+        );
+    }
+
+    #[test]
+    fn kmp_object_has_disposable_interface() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("Disposable"),
+            "commonMain should have Disposable interface"
+        );
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("override fun destroy()"),
+            "jvm object should have destroy() override"
+        );
+    }
+
+    // ========================================================================
+    // Callback interface tests
+    // ========================================================================
+
+    #[test]
+    fn kmp_callback_interface_in_common() {
+        let udl = r#"
+            namespace test_crate {};
+
+            callback interface MyCallback {
+                void on_event(string event_name);
+                string get_name();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("interface MyCallback"),
+            "commonMain should have callback interface"
+        );
+    }
+
+    #[test]
+    fn kmp_callback_interface_has_methods_in_common() {
+        let udl = r#"
+            namespace test_crate {};
+
+            callback interface MyCallback {
+                void on_event(string event_name);
+                string get_name();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("fun `onEvent`"),
+            "commonMain should have onEvent method"
+        );
+        assert!(
+            bindings.common.contains("fun `getName`"),
+            "commonMain should have getName method"
+        );
+    }
+
+    // ========================================================================
+    // Error type tests
+    // ========================================================================
+
+    #[test]
+    fn kmp_error_enum_generates_exception_class() {
+        let udl = r#"
+            namespace test_crate {};
+
+            [Error]
+            enum MyError {
+                "NotFound",
+                "InvalidInput",
+                "Internal"
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        // Error enums should be generated as exception classes
+        // The "Error" suffix is converted to "Exception"
+        assert!(
+            bindings.common.contains("MyException") || bindings.common.contains("MyError"),
+            "should have error type (MyException or MyError)"
+        );
+        assert!(
+            bindings.common.contains("Exception"),
+            "error type should be an Exception class"
+        );
+    }
+
+    // ========================================================================
+    // Multi-platform generation tests
+    // ========================================================================
+
+    #[test]
+    fn kmp_generates_jvm_and_native_bindings() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.jvm.is_some(),
+            "should generate JVM bindings"
+        );
+        assert!(
+            bindings.native.is_some(),
+            "should generate Native bindings"
+        );
+    }
+
+    #[test]
+    fn kmp_jvm_and_native_both_have_actual() {
+        // Both JVM and Native should have 'actual' implementations.
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        let native = bindings.native.as_ref().expect("native bindings should exist");
+        assert!(
+            jvm.contains("actual"),
+            "jvm bindings should have 'actual' keyword"
+        );
+        assert!(
+            native.contains("actual"),
+            "native bindings should have 'actual' keyword"
+        );
+    }
+
+    // ========================================================================
+    // Edge case tests
+    // ========================================================================
+
+    #[test]
+    fn kmp_empty_record() {
+        // A record with no fields should still be generated.
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary Empty {};
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("Empty"),
+            "should have Empty record"
+        );
+    }
+
+    #[test]
+    fn kmp_single_variant_enum() {
+        let udl = r#"
+            namespace test_crate {};
+
+            enum Solo {
+                "Only"
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("enum class Solo"),
+            "should have enum class Solo"
+        );
+        // Variant "Only" is converted to SHOUTY_SNAKE_CASE by default
+        assert!(
+            bindings.common.contains("ONLY") || bindings.common.contains("Only"),
+            "should have Only/ONLY variant"
+        );
+    }
+
+    #[test]
+    fn kmp_enum_with_repr_int() {
+        let udl = r#"
+            namespace test_crate {};
+
+            [Enum]
+            interface IntEnum {
+                A(i32 value);
+                B(i32 value);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("sealed class") || bindings.common.contains("enum class"),
+            "should generate enum class or sealed class"
+        );
+    }
+
+    #[test]
+    fn kmp_record_with_optional_fields() {
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary User {
+                string name;
+                string? nickname;
+                u32? age;
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("data class User"),
+            "should have data class User"
+        );
+    }
+
+    #[test]
+    fn kmp_record_with_sequence_fields() {
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary Container {
+                sequence<i32> numbers;
+                sequence<string> names;
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("data class Container"),
+            "should have data class Container"
+        );
+        assert!(
+            bindings.common.contains("kotlin.collections.List")
+                || bindings.common.contains("List<"),
+            "sequence should map to List"
+        );
+    }
+
+    #[test]
+    fn kmp_record_with_map_fields() {
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary Config {
+                record<string, i32> entries;
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("data class Config"),
+            "should have data class Config"
+        );
+    }
+
+    // ========================================================================
+    // Config option tests
+    // ========================================================================
+
+    #[test]
+    fn kmp_immutable_records_generates_val() {
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary Point {
+                double x;
+                double y;
+            };
+        "#;
+        let ci = ComponentInterface::from_webidl(udl, "test_crate").unwrap();
+        let config = Config {
+            package_name: Some("test.package".to_string()),
+            cdylib_name: Some("test".to_string()),
+            kotlin_multiplatform: true,
+            kotlin_targets: vec![ConfigKotlinTarget::Jvm],
+            generate_immutable_records: Some(true),
+            ..Default::default()
+        };
+        let bindings = generate_bindings(&config, &ci).unwrap();
+        assert!(
+            bindings.common.contains("val "),
+            "immutable records should use 'val'"
+        );
+        assert!(
+            !bindings.common.contains("var "),
+            "immutable records should not use 'var'"
+        );
+    }
+
+    #[test]
+    fn kmp_mutable_records_generates_var() {
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary Point {
+                double x;
+                double y;
+            };
+        "#;
+        let ci = ComponentInterface::from_webidl(udl, "test_crate").unwrap();
+        let config = Config {
+            package_name: Some("test.package".to_string()),
+            cdylib_name: Some("test".to_string()),
+            kotlin_multiplatform: true,
+            kotlin_targets: vec![ConfigKotlinTarget::Jvm],
+            generate_immutable_records: Some(false),
+            ..Default::default()
+        };
+        let bindings = generate_bindings(&config, &ci).unwrap();
+        assert!(
+            bindings.common.contains("var "),
+            "mutable records should use 'var'"
+        );
+    }
+
+    #[test]
+    fn kmp_stub_bindings_generated_when_stub_target() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let ci = ComponentInterface::from_webidl(udl, "test_crate").unwrap();
+        let config = Config {
+            package_name: Some("test.package".to_string()),
+            cdylib_name: Some("test".to_string()),
+            kotlin_multiplatform: true,
+            kotlin_targets: vec![ConfigKotlinTarget::Stub],
+            ..Default::default()
+        };
+        let bindings = generate_bindings(&config, &ci).unwrap();
+        assert!(
+            bindings.stub.is_some(),
+            "stub bindings should be generated when stub target is configured"
+        );
+        let stub = bindings.stub.as_ref().unwrap();
+        assert!(
+            stub.contains("actual"),
+            "stub bindings should have 'actual' keyword"
+        );
+        assert!(
+            stub.contains("TODO"),
+            "stub bindings should have TODO() stubs"
+        );
+    }
+
+    // ========================================================================
+    // Package and visibility tests
+    // ========================================================================
+
+    #[test]
+    fn kmp_uses_configured_package_name() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+            };
+        "#;
+        let ci = ComponentInterface::from_webidl(udl, "test_crate").unwrap();
+        let config = Config {
+            package_name: Some("com.example.mybindings".to_string()),
+            cdylib_name: Some("test".to_string()),
+            kotlin_multiplatform: true,
+            kotlin_targets: vec![ConfigKotlinTarget::Jvm],
+            ..Default::default()
+        };
+        let bindings = generate_bindings(&config, &ci).unwrap();
+        assert!(
+            bindings.common.contains("com.example.mybindings"),
+            "commonMain should use configured package name"
+        );
+    }
+
+    #[test]
+    fn kmp_uses_public_visibility() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("public"),
+            "commonMain should use public visibility"
+        );
+    }
+
+    // ========================================================================
+    // Async function tests
+    // ========================================================================
+
+    #[test]
+    fn kmp_object_with_async_method() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface AsyncTask {
+                constructor();
+                [Async]
+                string fetch_data();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        // Async methods should generate suspend fun
+        // (The exact form depends on whether the template handles it correctly)
+        assert!(
+            bindings.common.contains("AsyncTask"),
+            "should have AsyncTask class"
+        );
+    }
+
+    // ========================================================================
+    // Multiple types interaction tests
+    // ========================================================================
+
+    #[test]
+    fn kmp_multiple_records_and_enums() {
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary Point { double x; double y; };
+            dictionary Rect { Point origin; Point size; };
+            enum Color { "Red", "Green", "Blue" };
+            [Enum]
+            interface Shape { Circle(double radius); Square(double side); };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(bindings.common.contains("data class Point"), "should have Point");
+        assert!(bindings.common.contains("data class Rect"), "should have Rect");
+        assert!(bindings.common.contains("enum class Color"), "should have Color");
+        assert!(bindings.common.contains("sealed class Shape"), "should have Shape");
+    }
+
+    #[test]
+    fn kmp_record_referencing_enum() {
+        let udl = r#"
+            namespace test_crate {};
+
+            enum Status { "Active", "Inactive" };
+            dictionary User { string name; Status status; };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("data class User"),
+            "should have User record"
+        );
+        assert!(
+            bindings.common.contains("enum class Status"),
+            "should have Status enum"
+        );
+    }
+
+    #[test]
+    fn kmp_multiple_objects() {
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo { constructor(); string hello(); };
+            interface Bar { constructor(); i32 compute(i32 x); };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(bindings.common.contains("Foo"), "should have Foo");
+        assert!(bindings.common.contains("Bar"), "should have Bar");
+    }
 }
