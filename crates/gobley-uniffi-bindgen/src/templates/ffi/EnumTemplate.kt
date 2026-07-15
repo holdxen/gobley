@@ -6,6 +6,18 @@
 // and `sealed class` for the general case.
 #}
 
+{%- let has_methods = !e.methods().is_empty() %}
+{%- let uniffi_trait_methods = e.uniffi_trait_methods() %}
+{%- let has_trait_methods = uniffi_trait_methods.display_fmt.is_some() || uniffi_trait_methods.debug_fmt.is_some() || uniffi_trait_methods.eq_eq.is_some() || uniffi_trait_methods.hash_hash.is_some() || uniffi_trait_methods.ord_cmp.is_some() %}
+{%- let use_extension = config.kotlin_multiplatform && (has_methods || has_trait_methods) %}
+
+{%- if use_extension %}
+{%- for meth in e.methods() %}
+{%- call kt::func_extension_with_body(type_name, meth, 0) -%}{%- endcall %}
+{%- endfor %}
+{%- call kt::uniffi_trait_impls(type_name, uniffi_trait_methods, 0, true) -%}{%- endcall %}
+{%- endif %}
+
 {%- if e.is_flat() %}
 
 {{ visibility() }}object {{ e|ffi_converter_name }}: FfiConverterRustBuffer<{{ type_name }}> {

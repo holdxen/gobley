@@ -11,6 +11,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 use fs_err as fs;
 use uniffi_bindgen::{BindingGenerator, Component, ComponentInterface, GenerationSettings};
 
+#[allow(dead_code)]
 mod gen_kotlin_multiplatform;
 use gen_kotlin_multiplatform::{generate_bindings, Config};
 
@@ -110,15 +111,21 @@ fn write_bindings_target(
         .join(package_path);
     let file_path = Utf8PathBuf::from(&dest_dir).join(file_name);
 
-    fs::create_dir_all(dest_dir).unwrap();
-    fs::write(&file_path, content).unwrap();
+    if let Err(e) = fs::create_dir_all(&dest_dir) {
+        eprintln!("Failed to create directory {dest_dir}: {e}");
+        return;
+    }
+    if let Err(e) = fs::write(&file_path, &content) {
+        eprintln!("Failed to write bindings to {file_path}: {e}");
+        return;
+    }
 
     if settings.try_format_code {
         println!("Code generation complete, formatting with ktlint (use --no-format to disable)");
         if let Err(e) = Command::new("ktlint").arg("-F").arg(&file_path).output() {
+            let file_name = file_path.file_name().map(|n| n.to_string()).unwrap_or_default();
             println!(
-                "Warning: Unable to auto-format {} using ktlint: {e:?}",
-                file_path.file_name().unwrap(),
+                "Warning: Unable to auto-format {file_name} using ktlint: {e:?}",
             );
         }
     }
@@ -130,8 +137,19 @@ fn write_cinterop(ci: &ComponentInterface, out_dir: &Utf8Path, content: String) 
         .join("cinterop")
         .join("headers")
         .join(ci.namespace());
-    fs::create_dir_all(&dst_dir).unwrap();
+    if let Err(e) = fs::create_dir_all(&dst_dir) {
+        eprintln!("Failed to create cinterop directory {dst_dir}: {e}");
+        return;
+    }
     let file_path = dst_dir.join(format!("{}.h", ci.namespace()));
-    let mut f = File::create(file_path).unwrap();
-    write!(f, "{}", content).unwrap();
+    let mut f = match File::create(&file_path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Failed to create cinterop header {file_path}: {e}");
+            return;
+        }
+    };
+    if let Err(e) = write!(f, "{}", content) {
+        eprintln!("Failed to write cinterop header {file_path}: {e}");
+    }
 }

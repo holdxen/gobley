@@ -7,6 +7,10 @@
 #}
 
 {%- let should_generate_serializable = config.generate_serializable() && e|serializable_enum(ci) -%}
+{%- let has_methods = !e.methods().is_empty() -%}
+{%- let uniffi_trait_methods = e.uniffi_trait_methods() -%}
+{%- let has_trait_methods = uniffi_trait_methods.display_fmt.is_some() || uniffi_trait_methods.debug_fmt.is_some() || uniffi_trait_methods.eq_eq.is_some() || uniffi_trait_methods.hash_hash.is_some() || uniffi_trait_methods.ord_cmp.is_some() -%}
+{%- let inline_methods = !config.kotlin_multiplatform && (has_methods || has_trait_methods) -%}
 
 {%- if e.is_flat() %}
 
@@ -20,9 +24,12 @@
     {{ variant|variant_name(config) }}{% if loop.last %};{% else %},{% endif %}
     {%- endfor %}
 
-    {%- for meth in e.methods() -%}
+    {%- if inline_methods %}
+    {%- for meth in e.methods() %}
     {%- call kt::func_decl_with_body("", meth, 4) -%}{%- endcall %}
     {%- endfor %}
+    {%- call kt::uniffi_trait_impls(type_name, uniffi_trait_methods, 4, false) -%}{%- endcall %}
+    {%- endif %}
 
     {{ visibility() }}companion object
 }
@@ -34,9 +41,12 @@
     {{ variant|variant_name(config) }}({{ e|variant_discr_literal(loop.index0) }}){% if loop.last %};{% else %},{% endif %}
     {%- endfor %}
 
-    {%- for meth in e.methods() -%}
+    {%- if inline_methods %}
+    {%- for meth in e.methods() %}
     {%- call kt::func_decl_with_body("", meth, 4) -%}{%- endcall %}
     {%- endfor %}
+    {%- call kt::uniffi_trait_impls(type_name, uniffi_trait_methods, 4, false) -%}{%- endcall %}
+    {%- endif %}
 
     {{ visibility() }}companion object
 }
@@ -81,9 +91,12 @@
     {%- endif %}
     {% endfor %}
 
-    {%- for meth in e.methods() -%}
+    {%- if inline_methods %}
+    {%- for meth in e.methods() %}
     {%- call kt::func_decl_with_body("", meth, 4) -%}{%- endcall %}
     {%- endfor %}
+    {%- call kt::uniffi_trait_impls(type_name, uniffi_trait_methods, 4, false) -%}{%- endcall %}
+    {%- endif %}
 
     {{ visibility() }}companion object
 }

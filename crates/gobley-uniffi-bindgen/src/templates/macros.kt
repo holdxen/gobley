@@ -342,3 +342,48 @@ v{{- field_num -}}
 {%- macro docstring(defn, indent_spaces) %}
 {%- call docstring_value(defn.docstring(), indent_spaces) %}{% endcall %}
 {%- endmacro %}
+
+{#- Macro for generating uniffi trait method implementations (Display/Eq/Hash/Ord) -#}
+{#- `type_name`: the Kotlin type name of the record/enum -#}
+{#- `uniffi_trait_methods`: the UniffiTraitMethods from rec.uniffi_trait_methods() -#}
+{#- `indent`: indentation level for inline (non-KMP) mode -#}
+{#- `use_extension`: when true, generate as top-level extension functions (KMP mode) -#}
+{%- macro uniffi_trait_impls(type_name, uniffi_trait_methods, indent, use_extension) %}
+{%- if let Some(fmt) = uniffi_trait_methods.display_fmt.or(uniffi_trait_methods.debug_fmt.clone()) %}
+{%- if use_extension %}
+{{ visibility() }}fun {{ type_name }}.toString(): String {
+    return {{ fmt.return_type().unwrap()|lift_fn }}({% call to_ffi_call(fmt, 4) %}{% endcall %})
+}
+{%- else %}
+{{ " "|repeat(indent) }}override fun toString(): String {
+{{ " "|repeat(indent) }}    return {{ fmt.return_type().unwrap()|lift_fn }}({% call to_ffi_call(fmt, indent + 4) %}{% endcall %})
+{{ " "|repeat(indent) }}}
+{%- endif %}
+{%- endif %}
+{%- if let Some(eq) = uniffi_trait_methods.eq_eq %}
+{%- if use_extension %}
+{{ visibility() }}fun {{ type_name }}.equals(other: Any?): Boolean {
+    if (this === other) return true
+    if (other !is {{ type_name }}) return false
+    return {{ eq.return_type().unwrap()|lift_fn }}({% call to_ffi_call(eq, 4) %}{% endcall %})
+}
+{%- else %}
+{{ " "|repeat(indent) }}override fun equals(other: Any?): Boolean {
+{{ " "|repeat(indent) }}    if (this === other) return true
+{{ " "|repeat(indent) }}    if (other !is {{ type_name }}) return false
+{{ " "|repeat(indent) }}    return {{ eq.return_type().unwrap()|lift_fn }}({% call to_ffi_call(eq, indent + 4) %}{% endcall %})
+{{ " "|repeat(indent) }}}
+{%- endif %}
+{%- endif %}
+{%- if let Some(hash) = uniffi_trait_methods.hash_hash %}
+{%- if use_extension %}
+{{ visibility() }}fun {{ type_name }}.hashCode(): Int {
+    return {{ hash.return_type().unwrap()|lift_fn }}({%- call to_ffi_call(hash, 4) %}{% endcall %}).toInt()
+}
+{%- else %}
+{{ " "|repeat(indent) }}override fun hashCode(): Int {
+{{ " "|repeat(indent) }}    return {{ hash.return_type().unwrap()|lift_fn }}({%- call to_ffi_call(hash, indent + 4) %}{% endcall %}).toInt()
+{{ " "|repeat(indent) }}}
+{%- endif %}
+{%- endif %}
+{%- endmacro %}
