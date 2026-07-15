@@ -2,6 +2,7 @@
 internal const val UNIFFI_CALL_SUCCESS = 0.toByte()
 internal const val UNIFFI_CALL_ERROR = 1.toByte()
 internal const val UNIFFI_CALL_UNEXPECTED_ERROR = 2.toByte()
+internal const val UNIFFI_CALL_CANCELLED = 3.toByte()
 
 // Default Implementations
 internal fun UniffiRustCallStatus.isSuccess(): Boolean
@@ -13,6 +14,9 @@ internal fun UniffiRustCallStatus.isError(): Boolean
 internal fun UniffiRustCallStatus.isPanic(): Boolean
     = code == UNIFFI_CALL_UNEXPECTED_ERROR
 
+internal fun UniffiRustCallStatus.isCancelled(): Boolean
+    = code == UNIFFI_CALL_CANCELLED
+
 internal fun UniffiRustCallStatusByValue.isSuccess(): Boolean
     = code == UNIFFI_CALL_SUCCESS
 
@@ -21,6 +25,9 @@ internal fun UniffiRustCallStatusByValue.isError(): Boolean
 
 internal fun UniffiRustCallStatusByValue.isPanic(): Boolean
     = code == UNIFFI_CALL_UNEXPECTED_ERROR
+
+internal fun UniffiRustCallStatusByValue.isCancelled(): Boolean
+    = code == UNIFFI_CALL_CANCELLED
 
 // Each top-level error class has a companion object that can lift the error from the call status's rust buffer
 {{ visibility() }}interface UniffiRustCallStatusErrorHandler<E> {
@@ -55,6 +62,8 @@ internal fun<E: kotlin.Exception> uniffiCheckCallStatus(errorHandler: UniffiRust
         } else {
             throw InternalException("Rust panic")
         }
+    } else if (status.isCancelled()) {
+        throw InternalException("Rust future cancelled")
     } else {
         throw InternalException("Unknown rust call status: $status.code")
     }

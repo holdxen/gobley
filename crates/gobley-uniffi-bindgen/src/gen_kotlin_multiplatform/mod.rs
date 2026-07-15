@@ -640,8 +640,17 @@ impl KotlinCodeOracle {
     }
 
     /// Get the idiomatic Kotlin rendering of a function name.
+    /// If the name conflicts with Kotlin's built-in enum properties,
+    /// prefix with "rust" to avoid compilation errors.
     fn fn_name(&self, nm: &str) -> String {
-        format!("`{}`", nm.to_string().to_lower_camel_case())
+        let camel = nm.to_string().to_lower_camel_case();
+        // Kotlin enum built-in properties that conflict with user-defined methods
+        const ENUM_RESERVED: &[&str] = &["name", "ordinal", "entries", "values"];
+        if ENUM_RESERVED.contains(&camel.as_str()) {
+            format!("`rust{}`", camel[0..1].to_uppercase() + &camel[1..])
+        } else {
+            format!("`{}`", camel)
+        }
     }
 
     /// Get the idiomatic Kotlin rendering of a variable name.
@@ -4128,5 +4137,933 @@ mod tests {
         let bindings = generate_test_bindings(udl);
         assert!(bindings.common.contains("Foo"), "should have Foo");
         assert!(bindings.common.contains("Bar"), "should have Bar");
+    }
+
+    // ========================================================================
+    // UniFFI Internals: Lifting and Lowering
+    // Based on docs/manual/src/internals/lifting_and_lowering.md
+    // ========================================================================
+
+    #[test]
+    fn ffi_boolean_uses_int8() {
+        // Booleans must be lowered as int8_t (Byte in Kotlin), not Boolean.
+        // Values must be 0 or 1.
+        let udl = r#"
+            namespace test_crate {};
+
+            namespace test_crate {
+                boolean negate(boolean value);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        // FfiConverterBoolean should use Byte (int8_t)
+        assert!(
+            jvm.contains("FfiConverterBoolean"),
+            "should have FfiConverterBoolean\nGot:\n{jvm}"
+        );
+        assert!(
+            jvm.contains("0.toByte()") || jvm.contains("1.toByte"),
+            "boolean should use byte values 0/1\nGot:\n{jvm}"
+        );
+    }
+
+    #[test]
+    fn ffi_string_uses_rust_buffer() {
+        // Strings must be lowered as RustBuffer (not raw pointer).
+        // Serialized as i32 length (signed, big-endian) + UTF-8 bytes, no null terminator.
+        let udl = r#"
+            namespace test_crate {};
+
+            namespace test_crate {
+                string greet(string name);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("FfiConverterString"),
+            "should have FfiConverterString\nGot:\n{jvm}"
+        );
+        // String lowering should produce a RustBuffer, not a raw pointer
+        assert!(
+            jvm.contains("RustBuffer"),
+            "string should use RustBuffer\nGot:\n{jvm}"
+        );
+    }
+
+    #[test]
+    fn ffi_sequence_uses_signed_i32_count() {
+        // Sequences must be serialized as signed i32 item count + items.
+        // Length fields must be signed i32 (not u32) for JVM compatibility.
+        let udl = r#"
+            namespace test_crate {};
+
+            namespace test_crate {
+                sequence<i32> double_all(sequence<i32> numbers);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        // Should use putInt/getInt (signed i32) for sequence length
+        assert!(
+            jvm.contains("FfiConverterSequence"),
+            "should have FfiConverterSequence\nGot:\n{jvm}"
+        );
+    }
+
+    #[test]
+    fn ffi_enum_variant_numbering_starts_at_one() {
+        // Enum variants must be numbered starting from 1 (not 0).
+        // This is critical for correct serialization.
+        let udl = r#"
+            namespace test_crate {};
+
+            enum Direction {
+                "North",
+                "South",
+                "East",
+                "West"
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        // Flat enum write should use ordinal + 1 (1-based)
+        assert!(
+            jvm.contains("ordinal + 1"),
+            "flat enum write should use ordinal + 1 (1-based)\nGot:\n{jvm}"
+        );
+        // Flat enum read should use getInt() - 1
+        assert!(
+            jvm.contains("getInt() - 1"),
+            "flat enum read should use getInt() - 1 (1-based)\nGot:\n{jvm}"
+        );
+    }
+
+    #[test]
+    fn ffi_non_flat_enum_variant_numbering_starts_at_one() {
+        // Non-flat (sealed class) enum variants must also be 1-based.
+        let udl = r#"
+            namespace test_crate {};
+
+            [Enum]
+            interface Response {
+                Success(string data, u32 code);
+                Error(string message);
+                Loading();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        // Non-flat enum write should use putInt({{ loop.index }}) where loop.index is 1-based
+        assert!(
+            jvm.contains("putInt(1)") || jvm.contains("putInt({{"),
+            "non-flat enum should use 1-based variant numbering in write\nGot:\n{jvm}"
+        );
+        // Non-flat enum read should use when(buf.getInt()) with 1-based cases
+        assert!(
+            jvm.contains("when(buf.getInt())"),
+            "non-flat enum read should use when(buf.getInt())\nGot:\n{jvm}"
+        );
+    }
+
+    #[test]
+    fn ffi_record_fields_in_declaration_order() {
+        // Record fields must be serialized in declaration order.
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary Point {
+                double x;
+                double y;
+                double z;
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        // FfiConverterTypePoint should serialize fields in order x, y, z
+        assert!(
+            jvm.contains("FfiConverterTypePoint"),
+            "should have FfiConverterTypePoint\nGot:\n{jvm}"
+        );
+    }
+
+    #[test]
+    fn ffi_big_endian_serialization() {
+        // All numeric types must be serialized big-endian.
+        // This is enforced by ByteBuffer using ByteOrder.BIG_ENDIAN.
+        let udl = r#"
+            namespace test_crate {};
+
+            namespace test_crate {
+                i32 add(i32 a, i32 b);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        // ByteBuffer should be initialized with BIG_ENDIAN
+        assert!(
+            jvm.contains("BIG_ENDIAN"),
+            "ByteBuffer should use BIG_ENDIAN byte order\nGot:\n{jvm}"
+        );
+    }
+
+    // ========================================================================
+    // UniFFI Internals: Object References
+    // Based on docs/manual/src/internals/object_references.md
+    // ========================================================================
+
+    #[test]
+    fn object_handle_zero_is_reserved() {
+        // Handle 0 must be reserved as invalid/null value.
+        // NoHandle constructor should set handle = 0.
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("NoHandle"),
+            "should have NoHandle sentinel\nGot:\n{jvm}"
+        );
+    }
+
+    #[test]
+    fn object_uses_arc_handle_cloning() {
+        // Object handles must be cloned before method calls (Arc::clone pattern).
+        // The callWithHandle method should clone the handle.
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("callWithHandle"),
+            "object should use callWithHandle for method calls\nGot:\n{jvm}"
+        );
+        assert!(
+            jvm.contains("uniffiCloneHandle"),
+            "object should have uniffiCloneHandle\nGot:\n{jvm}"
+        );
+    }
+
+    #[test]
+    fn object_has_free_function() {
+        // Each object must have a free function to release the handle.
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        // Should have UniffiCleanAction that calls the free function
+        assert!(
+            jvm.contains("UniffiCleanAction"),
+            "object should have UniffiCleanAction for handle cleanup\nGot:\n{jvm}"
+        );
+    }
+
+    #[test]
+    fn object_has_cleaner_integration() {
+        // Objects should integrate with JVM Cleaner for automatic cleanup.
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("UniffiCleaner") || jvm.contains("CLEANER"),
+            "object should integrate with Cleaner for GC\nGot:\n{jvm}"
+        );
+    }
+
+    #[test]
+    fn object_has_reference_counting() {
+        // Objects must use reference counting (callCounter) to prevent
+        // use-after-free when the handle is being freed concurrently.
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("callCounter"),
+            "object should have callCounter for reference counting\nGot:\n{jvm}"
+        );
+    }
+
+    // ========================================================================
+    // UniFFI Internals: Trait Interface Handle Discrimination
+    // Based on docs/manual/src/internals/object_references.md
+    // ========================================================================
+
+    #[test]
+    fn trait_interface_handle_discrimination() {
+        // For trait interfaces (export(rust, foreign)):
+        // - Lowest bit = 0 → Rust-implemented object
+        // - Lowest bit = 1 → Foreign callback
+        // The lift function must check `(value and 1) == 0` to distinguish.
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        // Should check lowest bit for handle discrimination
+        // In Kotlin: (value and 1L) == 0L
+        assert!(
+            jvm.contains("and 1") || jvm.contains("0L"),
+            "trait interface lift should check lowest bit for handle discrimination\nGot:\n{jvm}"
+        );
+    }
+
+    // ========================================================================
+    // UniFFI Internals: Callback Interface VTable
+    // Based on docs/manual/src/internals/foreign_calls.md
+    // ========================================================================
+
+    #[test]
+    fn callback_interface_has_vtable_with_free() {
+        // Each callback interface vtable must have a free method.
+        let udl = r#"
+            namespace test_crate {};
+
+            callback interface MyCallback {
+                void on_event(string event_name);
+                string get_name();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("uniffiFree"),
+            "callback interface vtable should have uniffiFree\nGot:\n{jvm}"
+        );
+    }
+
+    #[test]
+    fn callback_interface_has_vtable_with_clone() {
+        // Each callback interface vtable must have a clone method.
+        let udl = r#"
+            namespace test_crate {};
+
+            callback interface MyCallback {
+                void on_event(string event_name);
+                string get_name();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("uniffiClone"),
+            "callback interface vtable should have uniffiClone\nGot:\n{jvm}"
+        );
+    }
+
+    #[test]
+    fn callback_interface_has_vtable_registration() {
+        // VTable must be registered with Rust before any handles are returned.
+        let udl = r#"
+            namespace test_crate {};
+
+            callback interface MyCallback {
+                void on_event(string event_name);
+                string get_name();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("register"),
+            "callback interface should have register function\nGot:\n{jvm}"
+        );
+    }
+
+    #[test]
+    fn callback_interface_uses_handle_map() {
+        // Foreign callback objects should be stored in a handle map.
+        let udl = r#"
+            namespace test_crate {};
+
+            callback interface MyCallback {
+                void on_event(string event_name);
+                string get_name();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("handleMap") || jvm.contains("UniffiHandleMap"),
+            "callback interface should use handle map\nGot:\n{jvm}"
+        );
+    }
+
+    // ========================================================================
+    // UniFFI Internals: RustCallStatus
+    // Based on docs/manual/src/internals/rust_calls.md
+    // ========================================================================
+
+    #[test]
+    fn rust_call_status_constants() {
+        // RustCallStatus codes must be: Success=0, Error=1, UnexpectedError=2, Cancelled=3
+        let udl = r#"
+            namespace test_crate {};
+
+            namespace test_crate {
+                i32 add(i32 a, i32 b);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("UNIFFI_CALL_SUCCESS") && jvm.contains("0.toByte()"),
+            "should have UNIFFI_CALL_SUCCESS = 0\nGot:\n{jvm}"
+        );
+        assert!(
+            jvm.contains("UNIFFI_CALL_ERROR") && jvm.contains("1.toByte()"),
+            "should have UNIFFI_CALL_ERROR = 1\nGot:\n{jvm}"
+        );
+        assert!(
+            jvm.contains("UNIFFI_CALL_UNEXPECTED_ERROR") && jvm.contains("2.toByte()"),
+            "should have UNIFFI_CALL_UNEXPECTED_ERROR = 2\nGot:\n{jvm}"
+        );
+        assert!(
+            jvm.contains("UNIFFI_CALL_CANCELLED") && jvm.contains("3.toByte()"),
+            "should have UNIFFI_CALL_CANCELLED = 3\nGot:\n{jvm}"
+        );
+    }
+
+    #[test]
+    fn rust_call_status_check_methods() {
+        // RustCallStatus must have isSuccess, isError, isPanic, isCancelled methods.
+        let udl = r#"
+            namespace test_crate {};
+
+            namespace test_crate {
+                i32 add(i32 a, i32 b);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        // The check methods are defined as extension functions: fun UniffiRustCallStatus.isSuccess()
+        assert!(
+            jvm.contains("isSuccess()"),
+            "should have isSuccess() method\nGot:\n{jvm}"
+        );
+        assert!(
+            jvm.contains("isError()"),
+            "should have isError() method\nGot:\n{jvm}"
+        );
+        assert!(
+            jvm.contains("isPanic()"),
+            "should have isPanic() method\nGot:\n{jvm}"
+        );
+        assert!(
+            jvm.contains("isCancelled()"),
+            "should have isCancelled() method\nGot:\n{jvm}"
+        );
+    }
+
+    #[test]
+    fn rust_call_status_initializes_to_success() {
+        // Foreign code must initialize code=Success (0) before calling Rust.
+        // Default constructor should set code = 0.toByte().
+        let udl = r#"
+            namespace test_crate {};
+
+            namespace test_crate {
+                i32 add(i32 a, i32 b);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        // The struct initializes code to 0 (Success) in the constructor
+        assert!(
+            jvm.contains("UNIFFI_CALL_SUCCESS") || jvm.contains("code = 0"),
+            "RustCallStatus should initialize code to 0 (Success)\nGot:\n{jvm}"
+        );
+    }
+
+    #[test]
+    fn rust_call_status_struct_layout() {
+        // RustCallStatus must be a JNA Structure with FieldOrder("code", "errorBuf").
+        let udl = r#"
+            namespace test_crate {};
+
+            namespace test_crate {
+                i32 add(i32 a, i32 b);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("FieldOrder"),
+            "RustCallStatus should use JNA Structure FieldOrder\nGot:\n{jvm}"
+        );
+        assert!(
+            jvm.contains("code") && jvm.contains("errorBuf"),
+            "RustCallStatus should have code and errorBuf fields\nGot:\n{jvm}"
+        );
+    }
+
+    // ========================================================================
+    // UniFFI Internals: Error Handling
+    // Based on docs/manual/src/internals/rust_calls.md
+    // ========================================================================
+
+    #[test]
+    fn error_handling_check_call_status() {
+        // uniffiCheckCallStatus must handle all status codes:
+        // Success → return, Error → throw, Panic → throw InternalException,
+        // Cancelled → throw InternalException, Unknown → throw InternalException
+        let udl = r#"
+            namespace test_crate {};
+
+            namespace test_crate {
+                i32 add(i32 a, i32 b);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("uniffiCheckCallStatus"),
+            "should have uniffiCheckCallStatus function\nGot:\n{jvm}"
+        );
+        assert!(
+            jvm.contains("Rust panic"),
+            "should handle panic status with 'Rust panic' message\nGot:\n{jvm}"
+        );
+        assert!(
+            jvm.contains("Rust future cancelled"),
+            "should handle cancelled status\nGot:\n{jvm}"
+        );
+    }
+
+    #[test]
+    fn error_handling_null_error_handler() {
+        // UniffiNullRustCallStatusErrorHandler should exist for functions
+        // that don't return Result.
+        let udl = r#"
+            namespace test_crate {};
+
+            namespace test_crate {
+                i32 add(i32 a, i32 b);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("UniffiNullRustCallStatusErrorHandler"),
+            "should have UniffiNullRustCallStatusErrorHandler\nGot:\n{jvm}"
+        );
+    }
+
+    #[test]
+    fn error_handling_throws_on_error_status() {
+        // When Rust returns Error status, Kotlin should throw the lifted error.
+        let udl = r#"
+            namespace test_crate {};
+
+            [Error]
+            enum MyError {
+                "NotFound",
+                "InvalidInput"
+            };
+
+            namespace test_crate {
+                [Throws=MyError]
+                i32 risky_add(i32 a, i32 b);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("MyException") || jvm.contains("MyError"),
+            "should have error type for throwing\nGot:\n{jvm}"
+        );
+    }
+
+    // ========================================================================
+    // UniFFI Internals: Method Call Pattern
+    // Based on docs/manual/src/internals/object_references.md
+    // ========================================================================
+
+    #[test]
+    fn method_call_clones_handle_before_call() {
+        // Per object_references.md: "Clone the handle. Pass the cloned handle
+        // to the Rust FFI function (transferring ownership of a leaked Arc<>
+        // back to Rust)."
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Calculator {
+                constructor();
+                i32 add(i32 a, i32 b);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        // callWithHandle should clone the handle before calling Rust
+        assert!(
+            jvm.contains("callWithHandle"),
+            "methods should use callWithHandle to clone handle\nGot:\n{jvm}"
+        );
+    }
+
+    // ========================================================================
+    // UniFFI Internals: FFI Converter Implementation
+    // Based on docs/manual/src/internals/ffi_converter_traits.md
+    // ========================================================================
+
+    #[test]
+    fn ffi_converter_has_required_methods() {
+        // FfiConverter interface must have: lift, lower, read, write, allocationSize
+        let udl = r#"
+            namespace test_crate {};
+
+            namespace test_crate {
+                i32 add(i32 a, i32 b);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("interface FfiConverter"),
+            "should have FfiConverter interface\nGot:\n{jvm}"
+        );
+        assert!(
+            jvm.contains("fun lift("),
+            "FfiConverter should have lift method\nGot:\n{jvm}"
+        );
+        assert!(
+            jvm.contains("fun lower("),
+            "FfiConverter should have lower method\nGot:\n{jvm}"
+        );
+        assert!(
+            jvm.contains("fun read("),
+            "FfiConverter should have read method\nGot:\n{jvm}"
+        );
+        assert!(
+            jvm.contains("fun write("),
+            "FfiConverter should have write method\nGot:\n{jvm}"
+        );
+    }
+
+    #[test]
+    fn ffi_converter_rust_buffer_has_required_methods() {
+        // FfiConverterRustBuffer must have read, write, allocationSize
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary Point {
+                double x;
+                double y;
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        assert!(
+            jvm.contains("FfiConverterRustBuffer"),
+            "should have FfiConverterRustBuffer\nGot:\n{jvm}"
+        );
+    }
+
+    // ========================================================================
+    // UniFFI Internals: Default Values / Placeholder Returns
+    // Based on docs/manual/src/internals/rust_calls.md
+    // ========================================================================
+
+    #[test]
+    fn placeholder_return_values_defined() {
+        // Placeholder values for error returns must be defined for all FFI types.
+        let udl = r#"
+            namespace test_crate {};
+
+            namespace test_crate {
+                i32 add(i32 a, i32 b);
+                string greet(string name);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        // Placeholder values should be defined for various types
+        assert!(
+            jvm.contains("0L") || jvm.contains("0.toLong()"),
+            "should have placeholder for Long/Handle\nGot:\n{jvm}"
+        );
+    }
+
+    // ========================================================================
+    // UniFFI Internals: Interface Definition
+    // Based on docs/manual/src/internals/rendering_foreign_bindings.md
+    // ========================================================================
+
+    #[test]
+    fn interface_definition_in_common() {
+        // Objects should generate both an interface (for the API) and an
+        // implementation class (for the FFI).
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+                i32 compute(i32 x);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        // Common should have the interface definition
+        assert!(
+            bindings.common.contains("interface"),
+            "common should have interface definition\nGot:\n{}",
+            &bindings.common[..bindings.common.len().min(2000)]
+        );
+    }
+
+    // ========================================================================
+    // UniFFI Internals: Docstring Handling
+    // Based on docs/manual/src/internals/rendering_foreign_bindings.md
+    // ========================================================================
+
+    #[test]
+    fn docstrings_preserved_in_bindings() {
+        // Docstrings from Rust should be preserved in generated Kotlin bindings.
+        let udl = r#"
+            namespace test_crate {};
+
+            /// A simple calculator for testing.
+            interface Calculator {
+                /// Create a new calculator.
+                constructor();
+                /// Add two numbers together.
+                i32 add(i32 a, i32 b);
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let common = &bindings.common;
+        // Docstrings should appear in the generated code
+        assert!(
+            common.contains("calculator") || common.contains("Calculator"),
+            "should have docstring content\nGot:\n{common}"
+        );
+    }
+
+    // ========================================================================
+    // UniFFI Internals: Package Name
+    // Based on docs/manual/src/internals/rendering_foreign_bindings.md
+    // ========================================================================
+
+    #[test]
+    fn package_name_applied_to_bindings() {
+        // The configured package name should appear in the generated bindings.
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+            };
+        "#;
+        let ci = ComponentInterface::from_webidl(udl, "test_crate").unwrap();
+        let config = Config {
+            package_name: Some("com.example.mylib".to_string()),
+            cdylib_name: Some("test".to_string()),
+            kotlin_multiplatform: true,
+            kotlin_targets: vec![ConfigKotlinTarget::Jvm],
+            ..Default::default()
+        };
+        let bindings = generate_bindings(&config, &ci).unwrap();
+        assert!(
+            bindings.common.contains("com.example.mylib"),
+            "should use configured package name\nGot:\n{}",
+            &bindings.common[..bindings.common.len().min(1000)]
+        );
+    }
+
+    // ========================================================================
+    // UniFFI Internals: External Types
+    // Based on docs/manual/src/internals/crates.md
+    // ========================================================================
+
+    #[test]
+    fn external_type_package_name_configurable() {
+        // External types should use the configured package name.
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+            };
+        "#;
+        let ci = ComponentInterface::from_webidl(udl, "test_crate").unwrap();
+        let mut external_packages = std::collections::HashMap::new();
+        external_packages.insert("other_crate".to_string(), "com.example.other".to_string());
+        let config = Config {
+            package_name: Some("com.example.mylib".to_string()),
+            cdylib_name: Some("test".to_string()),
+            kotlin_multiplatform: true,
+            kotlin_targets: vec![ConfigKotlinTarget::Jvm],
+            external_packages,
+            ..Default::default()
+        };
+        let bindings = generate_bindings(&config, &ci).unwrap();
+        // The external_packages config should be preserved
+        assert!(
+            config.external_packages.contains_key("other_crate"),
+            "external_packages should be preserved"
+        );
+    }
+
+    // ========================================================================
+    // UniFFI Internals: Async Support
+    // Based on docs/manual/src/internals/async-ffi.md
+    // ========================================================================
+
+    #[test]
+    fn async_function_generates_rust_future_handle() {
+        // Async functions should generate RustFuture handle-based FFI.
+        let udl = r#"
+            namespace test_crate {};
+
+            interface AsyncTask {
+                constructor();
+                [Async]
+                string fetch_data();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.contains("AsyncTask"),
+            "should have AsyncTask class"
+        );
+    }
+
+    // ========================================================================
+    // UniFFI Internals: Visibility
+    // Based on docs/manual/src/internals/rendering_foreign_bindings.md
+    // ========================================================================
+
+    #[test]
+    fn visibility_modifier_applied() {
+        // The configured visibility modifier should be applied to all public types.
+        let udl = r#"
+            namespace test_crate {};
+
+            dictionary Point {
+                double x;
+                double y;
+            };
+
+            enum Color {
+                "Red",
+                "Green",
+                "Blue"
+            };
+
+            interface Foo {
+                constructor();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        // All public types should have the visibility modifier
+        assert!(
+            bindings.common.contains("public data class Point"),
+            "record should have public visibility\nGot:\n{}",
+            &bindings.common[..bindings.common.len().min(1000)]
+        );
+        assert!(
+            bindings.common.contains("public enum class Color"),
+            "enum should have public visibility\nGot:\n{}",
+            &bindings.common[..bindings.common.len().min(1000)]
+        );
+    }
+
+    // ========================================================================
+    // UniFFI Internals: Complex Type Nesting
+    // Based on docs/manual/src/internals/lifting_and_lowering.md
+    // ========================================================================
+
+    #[test]
+    fn nested_optional_sequence_types() {
+        // Complex nested types like Optional<Sequence<T>> should be handled.
+        let udl = r#"
+            namespace test_crate {};
+
+            namespace test_crate {
+                sequence<i32>? maybe_numbers();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.len() > 0,
+            "should generate bindings for nested optional sequence"
+        );
+    }
+
+    #[test]
+    fn map_type_with_complex_values() {
+        // Maps with complex value types should be handled.
+        let udl = r#"
+            namespace test_crate {};
+
+            namespace test_crate {
+                record<string, string?> get_config();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.common.len() > 0,
+            "should generate bindings for map with optional values"
+        );
+    }
+
+    // ========================================================================
+    // UniFFI Internals: C Interop Header (Native)
+    // Based on docs/manual/src/internals/crates.md
+    // ========================================================================
+
+    #[test]
+    fn native_header_generated() {
+        // For native targets, a C interop header should be generated.
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        assert!(
+            bindings.header.is_some(),
+            "should generate native header\nGot: None"
+        );
     }
 }

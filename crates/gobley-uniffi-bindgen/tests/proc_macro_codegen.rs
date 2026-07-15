@@ -185,8 +185,8 @@ fn proc_macro_enum_methods_extension_in_kmp() {
 
     // Enum methods should be extension functions in jvm
     assert!(
-        jvm.contains("fun Direction.`name`") || jvm.contains("fun Direction.name"),
-        "jvm should have Direction.name extension function\nGot:\n{jvm}"
+        jvm.contains("fun Direction.`rustName`") || jvm.contains("fun Direction.rustName"),
+        "jvm should have Direction.rustName extension function (renamed from 'name' to avoid Kotlin enum conflict)\nGot:\n{jvm}"
     );
     assert!(
         jvm.contains("fun Direction.`opposite`") || jvm.contains("fun Direction.opposite"),
