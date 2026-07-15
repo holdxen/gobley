@@ -11,7 +11,7 @@ internal class UniffiHandleMap<T: Any> {
 
     // Insert a new object into the handle map and get a handle for it
     internal fun insert(obj: T): Long {
-        val handle = counter.getAndAdd(1)
+        val handle = counter.getAndAdd(2)
         syncAccess { map.put(handle, obj) }
         return handle
     }
