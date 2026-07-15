@@ -94,5 +94,6 @@ internal object UniffiLib {
 }
 
 {{ visibility() }}fun uniffiEnsureInitialized() {
+    @Suppress("unused_expression")
     UniffiLib
 }

@@ -273,6 +273,7 @@ internal interface UniffiLib : Library {
                 findLibraryName("{{ ci.namespace() }}"),
             )
             {%- endif %}
+            @Suppress("unused_expression")
             IntegrityCheckingUniffiLib
             loadIndirect("{{ ci.namespace() }}")
         }
@@ -296,6 +297,7 @@ internal object UniffiLib : Library {
             findLibraryName("{{ ci.namespace() }}"),
         )
         {%- endif %}
+        @Suppress("unused_expression")
         IntegrityCheckingUniffiLib
         Native.register(UniffiLib::class.java, findLibraryName("{{ ci.namespace() }}"))
         // No need to check the contract version and checksums, since 
@@ -330,5 +332,6 @@ internal object UniffiLib : Library {
 }
 
 {{ visibility() }}fun uniffiEnsureInitialized() {
+    @Suppress("unused_expression")
     UniffiLib
 }
