@@ -232,3 +232,105 @@ pub struct Config {
     #[uniffi(name = "configValue")]
     pub internal_value: i32,
 }
+
+// ─── Trait export modes ──────────────────────────────────────────────────────
+// uniffi 0.32 supports 4 modes:
+//   #[uniffi::export]               - Default: Rust implementations only
+//   #[uniffi::export(rust)]         - Explicit Rust implementations only
+//   #[uniffi::export(rust, foreign)] - Both Rust and foreign implementations
+//   #[uniffi::export(foreign)]      - Foreign implementations only (callback interface)
+
+// Mode 1: Default (Rust only) - same as #[uniffi::export(rust)]
+#[uniffi::export]
+pub trait Logger: Send + Sync {
+    fn log(&self, message: &str);
+    fn level(&self) -> u32;
+}
+
+struct StdoutLogger;
+
+impl Logger for StdoutLogger {
+    fn log(&self, message: &str) {
+        println!("{}", message);
+    }
+    fn level(&self) -> u32 {
+        1
+    }
+}
+
+#[uniffi::export]
+fn get_logger() -> Arc<dyn Logger> {
+    Arc::new(StdoutLogger)
+}
+
+// Mode 2: Explicit Rust only
+#[uniffi::export(rust)]
+pub trait Formatter: Send + Sync {
+    fn format(&self, input: &str) -> String;
+}
+
+struct JsonFormatter;
+
+impl Formatter for JsonFormatter {
+    fn format(&self, input: &str) -> String {
+        format!("{{\"data\": \"{}\"}}", input)
+    }
+}
+
+#[uniffi::export]
+fn get_formatter() -> Arc<dyn Formatter> {
+    Arc::new(JsonFormatter)
+}
+
+// Mode 3: Both Rust and foreign (callback interface + Rust impl)
+// When using foreign, method parameters must use owned types (String, not &str)
+// because callback interfaces receive owned data from the foreign side.
+#[uniffi::export(rust, foreign)]
+pub trait EventHandler: Send + Sync {
+    fn on_event(&self, event_name: String, data: String);
+    fn should_handle(&self, event_name: String) -> bool;
+}
+
+struct DefaultEventHandler;
+
+impl EventHandler for DefaultEventHandler {
+    fn on_event(&self, event_name: String, data: String) {
+        println!("Event: {} - {}", event_name, data);
+    }
+    fn should_handle(&self, _event_name: String) -> bool {
+        true
+    }
+}
+
+#[uniffi::export]
+fn get_event_handler() -> Arc<dyn EventHandler> {
+    Arc::new(DefaultEventHandler)
+}
+
+#[uniffi::export]
+fn process_event(handler: Arc<dyn EventHandler>, event: String) -> String {
+    if handler.should_handle(event.clone()) {
+        handler.on_event(event.clone(), "processed".to_string());
+        format!("handled: {}", event)
+    } else {
+        format!("skipped: {}", event)
+    }
+}
+
+// Mode 4: Foreign only (callback interface)
+// Foreign-only traits generate callback interfaces. Parameters use owned types.
+#[uniffi::export(foreign)]
+pub trait DataStore: Send + Sync {
+    fn get(&self, key: String) -> Option<String>;
+    fn set(&self, key: String, value: String);
+    fn has_key(&self, key: String) -> bool;
+}
+
+// Note: DataStore is foreign-only, so there's no Rust impl.
+// Kotlin code would provide the implementation via callback interface.
+// We can still use it as a parameter type.
+
+#[uniffi::export]
+fn use_data_store(store: Arc<dyn DataStore>, key: String) -> Option<String> {
+    store.get(key)
+}

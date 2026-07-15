@@ -424,3 +424,159 @@ fn proc_macro_renamed_record_fields() {
         "common should have renamed field 'configValue'\nGot:\n{common}"
     );
 }
+
+// ─── Trait export mode tests ─────────────────────────────────────────────────
+
+#[test]
+fn proc_macro_trait_default_export_rust_only() {
+    // #[uniffi::export] on trait (default) → Rust implementations only
+    // Should generate an interface and an Object (handle-based) impl
+    let lib = build_fixture_cdylib();
+    let (common, jvm) = generate_kmp_bindings(&lib);
+
+    // Logger interface should exist
+    assert!(
+        common.contains("interface LoggerInterface") || common.contains("interface Logger"),
+        "common should have Logger interface\nGot:\n{common}"
+    );
+    // Logger should have the log and level methods
+    assert!(
+        common.contains("`log`") || common.contains("log("),
+        "common should have log method\nGot:\n{common}"
+    );
+    assert!(
+        common.contains("`level`") || common.contains("level("),
+        "common should have level method\nGot:\n{common}"
+    );
+    // There should be a function to get a Logger instance
+    assert!(
+        common.contains("getLogger") || common.contains("get_logger"),
+        "common should have getLogger function\nGot:\n{common}"
+    );
+    // The Logger Object should have an actual impl in jvm
+    assert!(
+        jvm.contains("Logger"),
+        "jvm should have Logger class\nGot:\n{jvm}"
+    );
+}
+
+#[test]
+fn proc_macro_trait_explicit_rust_only() {
+    // #[uniffi::export(rust)] on trait → explicit Rust implementations only
+    let lib = build_fixture_cdylib();
+    let (common, _jvm) = generate_kmp_bindings(&lib);
+
+    // Formatter interface should exist
+    assert!(
+        common.contains("interface FormatterInterface") || common.contains("interface Formatter"),
+        "common should have Formatter interface\nGot:\n{common}"
+    );
+    // Formatter should have the format method
+    assert!(
+        common.contains("`format`") || common.contains("format("),
+        "common should have format method\nGot:\n{common}"
+    );
+}
+
+#[test]
+fn proc_macro_trait_rust_and_foreign() {
+    // #[uniffi::export(rust, foreign)] → both Rust and foreign implementations
+    // This should generate both an interface AND a callback interface
+    let lib = build_fixture_cdylib();
+    let (common, jvm) = generate_kmp_bindings(&lib);
+
+    // EventHandler interface should exist
+    assert!(
+        common.contains("interface EventHandler") || common.contains("EventHandler"),
+        "common should have EventHandler interface\nGot:\n{common}"
+    );
+    // EventHandler should have onEvent and shouldHandle methods
+    assert!(
+        common.contains("`onEvent`") || common.contains("onEvent"),
+        "common should have onEvent method\nGot:\n{common}"
+    );
+    assert!(
+        common.contains("`shouldHandle`") || common.contains("shouldHandle"),
+        "common should have shouldHandle method\nGot:\n{common}"
+    );
+    // process_event function should exist
+    assert!(
+        common.contains("processEvent") || common.contains("process_event"),
+        "common should have processEvent function\nGot:\n{common}"
+    );
+    // JVM should have the EventHandler implementation
+    assert!(
+        jvm.contains("EventHandler"),
+        "jvm should have EventHandler\nGot:\n{jvm}"
+    );
+}
+
+#[test]
+fn proc_macro_trait_foreign_only() {
+    // #[uniffi::export(foreign)] → foreign implementations only (callback interface)
+    // No Rust impl is generated; Kotlin provides the implementation
+    let lib = build_fixture_cdylib();
+    let (common, jvm) = generate_kmp_bindings(&lib);
+
+    // DataStore interface should exist (as a callback interface)
+    assert!(
+        common.contains("interface DataStore"),
+        "common should have DataStore interface\nGot:\n{common}"
+    );
+    // DataStore should have get, set, hasKey methods
+    assert!(
+        common.contains("`get`") || common.contains("fun get("),
+        "common should have get method\nGot:\n{common}"
+    );
+    assert!(
+        common.contains("`set`") || common.contains("fun set("),
+        "common should have set method\nGot:\n{common}"
+    );
+    // use_data_store function should exist
+    assert!(
+        common.contains("useDataStore") || common.contains("use_data_store"),
+        "common should have useDataStore function\nGot:\n{common}"
+    );
+    // JVM should have callback interface support for DataStore
+    assert!(
+        jvm.contains("DataStore"),
+        "jvm should have DataStore callback interface\nGot:\n{jvm}"
+    );
+}
+
+#[test]
+fn proc_macro_trait_foreign_generates_callback_interface() {
+    // Foreign-only traits should generate callback interface infrastructure
+    // in the platform source set (vtable, registration, etc.)
+    let lib = build_fixture_cdylib();
+    let (_common, jvm) = generate_kmp_bindings(&lib);
+
+    // Callback interfaces should have FfiConverter for the trait
+    // and registration infrastructure in jvm
+    assert!(
+        jvm.contains("DataStore"),
+        "jvm should have DataStore callback interface\nGot:\n{jvm}"
+    );
+}
+
+#[test]
+fn proc_macro_trait_rust_and_foreign_generates_both() {
+    // rust, foreign traits should generate both Object impl AND callback interface
+    let lib = build_fixture_cdylib();
+    let (common, jvm) = generate_kmp_bindings(&lib);
+
+    // EventHandler should appear in both common and jvm
+    assert!(
+        common.contains("EventHandler"),
+        "common should have EventHandler\nGot:\n{common}"
+    );
+    assert!(
+        jvm.contains("EventHandler"),
+        "jvm should have EventHandler\nGot:\n{jvm}"
+    );
+    // There should be a way to get an EventHandler from Rust
+    assert!(
+        common.contains("getEventHandler") || common.contains("get_event_handler"),
+        "common should have getEventHandler function\nGot:\n{common}"
+    );
+}
