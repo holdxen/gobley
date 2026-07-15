@@ -1087,7 +1087,8 @@ mod filters {
         type_: &FfiType,
         _: &dyn askama::Values,
     ) -> Result<bool, askama::Error> {
-        Ok(matches!(type_, FfiType::Handle))
+        // Handle is Long which is non-null in Kotlin, no assertion needed
+        Ok(false)
     }
 
     #[askama::filter_fn]
