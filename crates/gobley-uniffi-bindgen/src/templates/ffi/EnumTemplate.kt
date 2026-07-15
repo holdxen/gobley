@@ -13,7 +13,7 @@
 
 {%- if use_extension %}
 {%- for meth in e.methods() %}
-{%- call kt::func_extension_with_body(type_name, meth, 0) -%}{%- endcall %}
+{%- call kt::func_extension_with_body_enum(type_name, meth, 0) -%}{%- endcall %}
 {%- endfor %}
 {%- call kt::uniffi_trait_impls(type_name, uniffi_trait_methods, 0, true) -%}{%- endcall %}
 {%- endif %}

@@ -640,17 +640,8 @@ impl KotlinCodeOracle {
     }
 
     /// Get the idiomatic Kotlin rendering of a function name.
-    /// If the name conflicts with Kotlin's built-in enum properties,
-    /// prefix with "rust" to avoid compilation errors.
     fn fn_name(&self, nm: &str) -> String {
-        let camel = nm.to_string().to_lower_camel_case();
-        // Kotlin enum built-in properties that conflict with user-defined methods
-        const ENUM_RESERVED: &[&str] = &["name", "ordinal", "entries", "values"];
-        if ENUM_RESERVED.contains(&camel.as_str()) {
-            format!("`rust{}`", camel[0..1].to_uppercase() + &camel[1..])
-        } else {
-            format!("`{}`", camel)
-        }
+        format!("`{}`", nm.to_string().to_lower_camel_case())
     }
 
     /// Get the idiomatic Kotlin rendering of a variable name.
@@ -1438,6 +1429,20 @@ mod filters {
     #[askama::filter_fn]
     pub fn fn_name<S: AsRef<str>>(nm: S, _: &dyn askama::Values) -> Result<String, askama::Error> {
         Ok(KotlinCodeOracle.fn_name(nm.as_ref()))
+    }
+
+    /// Get the idiomatic Kotlin rendering of an enum method name.
+    /// Conflicts with Kotlin's built-in enum properties (name, ordinal, entries, values)
+    /// are resolved by prefixing with "rust".
+    #[askama::filter_fn]
+    pub fn enum_fn_name<S: AsRef<str>>(nm: S, _: &dyn askama::Values) -> Result<String, askama::Error> {
+        let camel = nm.as_ref().to_lower_camel_case();
+        const ENUM_RESERVED: &[&str] = &["name", "ordinal", "entries", "values"];
+        if ENUM_RESERVED.contains(&camel.as_str()) {
+            Ok(format!("`rust{}`", camel[0..1].to_uppercase() + &camel[1..]))
+        } else {
+            Ok(format!("`{}`", camel))
+        }
     }
 
     /// Get the idiomatic Kotlin rendering of a variable name.

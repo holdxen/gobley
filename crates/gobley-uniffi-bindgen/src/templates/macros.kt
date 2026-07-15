@@ -98,6 +98,35 @@
 {{ " "|repeat(indent) }}{{ '}' }}
 {% endmacro %}
 
+{%- macro func_decl_with_body_enum(func_decl, callable, indent) %}
+                        {%- call docstring(callable, indent) -%}{%- endcall %}
+                        {%- match callable.throws_type() -%}
+                        {%-     when Some(throwable) %}
+{{ " "|repeat(indent) }}@Throws({{ throwable|type_name(ci) }}::class {%- if callable.is_async() -%}, kotlin.coroutines.cancellation.CancellationException::class{%- endif -%})
+                        {%-     else -%}
+                        {%- endmatch %}
+{{ " "|repeat(indent) }}{{ visibility() }}{% if func_decl.len() != 0 -%}{{ func_decl }} {% endif -%}
+                        {%- if callable.is_async() -%}suspend {% endif -%}
+                        fun {{ callable.name()|enum_fn_name }}(
+                            {%- call arg_list(callable, false) -%}{%- endcall %}
+                        )
+                        {%- match callable.return_type() -%}
+                        {%-     when Some(return_type) %}: {{ return_type|type_name(ci) -}}
+                        {%-     else %}
+                        {%- endmatch %} {
+                            {%- if callable.is_async() %}
+{{ " "|repeat(indent) }}    return {% call call_async(callable, indent + 4) -%}{%- endcall %}
+                            {%- else %}
+                            {%- match callable.return_type() -%}
+                            {%-     when Some(return_type) %}
+{{ " "|repeat(indent) }}    return {{ return_type|lift_fn }}({%- call to_ffi_call(callable, indent + 4) -%}{%- endcall %})
+                            {%-     else %}
+{{ " "|repeat(indent) }}    {% call to_ffi_call(callable, indent + 4) -%}{%- endcall %}
+                            {%- endmatch %}
+                            {%- endif %}
+{{ " "|repeat(indent) }}{{ '}' }}
+{% endmacro %}
+
 {%- macro func_extension_with_body(receiver_type, callable, indent) %}
                         {%- call docstring(callable, indent) -%}{%- endcall %}
                         {%- match callable.throws_type() -%}
@@ -107,6 +136,34 @@
                         {%- endmatch %}
 {{ " "|repeat(indent) }}{{ visibility() }}{%- if callable.is_async() -%}suspend {% endif -%}
                         fun {{ receiver_type }}.{{ callable.name()|fn_name }}(
+                            {%- call arg_list(callable, false) -%}{%- endcall %}
+                        )
+                        {%- match callable.return_type() -%}
+                        {%-     when Some(return_type) %}: {{ return_type|type_name(ci) -}}
+                        {%-     else %}
+                        {%- endmatch %} {
+                            {%- if callable.is_async() %}
+{{ " "|repeat(indent) }}    return {% call call_async(callable, indent + 4) -%}{%- endcall %}
+                            {%- else %}
+                            {%- match callable.return_type() -%}
+                            {%-     when Some(return_type) %}
+{{ " "|repeat(indent) }}    return {{ return_type|lift_fn }}({%- call to_ffi_call(callable, indent + 4) -%}{%- endcall %})
+                            {%-     else %}
+{{ " "|repeat(indent) }}    {% call to_ffi_call(callable, indent + 4) -%}{%- endcall %}
+                            {%- endmatch %}
+                            {%- endif %}
+{{ " "|repeat(indent) }}{{ '}' }}
+{% endmacro %}
+
+{%- macro func_extension_with_body_enum(receiver_type, callable, indent) %}
+                        {%- call docstring(callable, indent) -%}{%- endcall %}
+                        {%- match callable.throws_type() -%}
+                        {%-     when Some(throwable) %}
+{{ " "|repeat(indent) }}@Throws({{ throwable|type_name(ci) }}::class {%- if callable.is_async() -%}, kotlin.coroutines.cancellation.CancellationException::class{%- endif -%})
+                        {%-     else -%}
+                        {%- endmatch %}
+{{ " "|repeat(indent) }}{{ visibility() }}{%- if callable.is_async() -%}suspend {% endif -%}
+                        fun {{ receiver_type }}.{{ callable.name()|enum_fn_name }}(
                             {%- call arg_list(callable, false) -%}{%- endcall %}
                         )
                         {%- match callable.return_type() -%}

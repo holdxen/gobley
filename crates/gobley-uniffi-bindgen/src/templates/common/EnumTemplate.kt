@@ -26,7 +26,7 @@
 
     {%- if inline_methods %}
     {%- for meth in e.methods() %}
-    {%- call kt::func_decl_with_body("", meth, 4) -%}{%- endcall %}
+    {%- call kt::func_decl_with_body_enum("", meth, 4) -%}{%- endcall %}
     {%- endfor %}
     {%- call kt::uniffi_trait_impls(type_name, uniffi_trait_methods, 4, false) -%}{%- endcall %}
     {%- endif %}
@@ -43,7 +43,7 @@
 
     {%- if inline_methods %}
     {%- for meth in e.methods() %}
-    {%- call kt::func_decl_with_body("", meth, 4) -%}{%- endcall %}
+    {%- call kt::func_decl_with_body_enum("", meth, 4) -%}{%- endcall %}
     {%- endfor %}
     {%- call kt::uniffi_trait_impls(type_name, uniffi_trait_methods, 4, false) -%}{%- endcall %}
     {%- endif %}
@@ -93,7 +93,7 @@
 
     {%- if inline_methods %}
     {%- for meth in e.methods() %}
-    {%- call kt::func_decl_with_body("", meth, 4) -%}{%- endcall %}
+    {%- call kt::func_decl_with_body_enum("", meth, 4) -%}{%- endcall %}
     {%- endfor %}
     {%- call kt::uniffi_trait_impls(type_name, uniffi_trait_methods, 4, false) -%}{%- endcall %}
     {%- endif %}
