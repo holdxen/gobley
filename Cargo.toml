@@ -39,6 +39,7 @@ members = [
     "tests/uniffi/struct-default-values",
     "tests/uniffi/trait-methods",
     "tests/uniffi/trait-record-enum",
+    "tests/uniffi/record-enum-methods",
     "tests/uniffi/type-limits",
 
     "examples/arithmetic-procmacro",

@@ -1,0 +1,12 @@
+[package]
+name = "gobley-fixture-record-enum-methods"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+name = "record_enum_methods"
+
+[dependencies]
+uniffi = { workspace = true }

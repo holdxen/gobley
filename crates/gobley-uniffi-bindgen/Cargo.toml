@@ -29,3 +29,6 @@ uniffi_bindgen = { workspace = true }
 uniffi_meta = { workspace = true }
 # TODO: Remove the following after upgrading MSRV to 1.78. cargo-platform 0.1.9 does not support 1.77 or older.
 cargo-platform = "=0.1.8"
+
+[dev-dependencies]
+tempfile = "3"
