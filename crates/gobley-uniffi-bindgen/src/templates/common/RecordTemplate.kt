@@ -5,7 +5,7 @@
 {%- let has_methods = !rec.methods().is_empty() -%}
 {%- let uniffi_trait_methods = rec.uniffi_trait_methods() -%}
 {%- let has_trait_methods = uniffi_trait_methods.display_fmt.is_some() || uniffi_trait_methods.debug_fmt.is_some() || uniffi_trait_methods.eq_eq.is_some() || uniffi_trait_methods.hash_hash.is_some() || uniffi_trait_methods.ord_cmp.is_some() -%}
-{%- let comparable = uniffi_trait_methods.ord_cmp.is_some() -%}
+{%- let comparable = !config.kotlin_multiplatform && uniffi_trait_methods.ord_cmp.is_some() -%}
 {%- let inline_methods = !config.kotlin_multiplatform && (has_methods || has_trait_methods) -%}
 
 {%- if rec.has_fields() %}
