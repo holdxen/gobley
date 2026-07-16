@@ -5214,4 +5214,54 @@ mod tests {
         assert_eq!(fn_name("entries"), "`entries`");
         assert_eq!(fn_name("values"), "`values`");
     }
+
+    // ========================================================================
+    // Compiler warning suppression tests
+    // These verify that generated Kotlin code doesn't trigger unnecessary
+    // compiler warnings (unused_expression, unnecessary non-null assertion).
+    // ========================================================================
+
+    #[test]
+    fn no_unused_expression_warning_for_init_side_effects() {
+        // IntegrityCheckingUniffiLib and UniffiLib are used for side effects
+        // (class loading). They must be annotated with @Suppress("unused_expression")
+        // to avoid Kotlin compiler warnings.
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        // Should have @Suppress for the side-effect expressions
+        assert!(
+            jvm.contains("@Suppress(\"unused_expression\")"),
+            "should suppress unused_expression warning\nGot:\n{jvm}"
+        );
+    }
+
+    #[test]
+    fn no_unnecessary_non_null_assertion_on_handle() {
+        // Long (handle type) is already non-null in Kotlin, so !! is unnecessary.
+        // The need_non_null_assertion filter must return false for FfiType::Handle.
+        let udl = r#"
+            namespace test_crate {};
+
+            interface Foo {
+                constructor();
+                string hello();
+            };
+        "#;
+        let bindings = generate_test_bindings(udl);
+        let jvm = bindings.jvm.as_ref().expect("jvm bindings should exist");
+        // The constructor should not have !! on the handle return
+        // Pattern: })!!) would indicate unnecessary !! on Long
+        assert!(
+            !jvm.contains("})!!)"),
+            "should not have unnecessary !! on Long handle\nGot:\n{jvm}"
+        );
+    }
 }
