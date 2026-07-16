@@ -443,4 +443,15 @@ v{{- field_num -}}
 {{ " "|repeat(indent) }}}
 {%- endif %}
 {%- endif %}
+{%- if let Some(cmp) = uniffi_trait_methods.ord_cmp %}
+{%- if use_extension %}
+{{ visibility() }}operator fun {{ type_name }}.compareTo(other: {{ type_name }}): Int {
+    return {{ cmp.return_type().unwrap()|lift_fn }}({%- call to_ffi_call(cmp, 4) %}{% endcall %}).toInt()
+}
+{%- else %}
+{{ " "|repeat(indent) }}override operator fun compareTo(other: {{ type_name }}): Int {
+{{ " "|repeat(indent) }}    return {{ cmp.return_type().unwrap()|lift_fn }}({%- call to_ffi_call(cmp, indent + 4) %}{% endcall %}).toInt()
+{{ " "|repeat(indent) }}}
+{%- endif %}
+{%- endif %}
 {%- endmacro %}

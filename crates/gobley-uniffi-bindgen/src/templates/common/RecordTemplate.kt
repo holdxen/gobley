@@ -5,6 +5,7 @@
 {%- let has_methods = !rec.methods().is_empty() -%}
 {%- let uniffi_trait_methods = rec.uniffi_trait_methods() -%}
 {%- let has_trait_methods = uniffi_trait_methods.display_fmt.is_some() || uniffi_trait_methods.debug_fmt.is_some() || uniffi_trait_methods.eq_eq.is_some() || uniffi_trait_methods.hash_hash.is_some() || uniffi_trait_methods.ord_cmp.is_some() -%}
+{%- let comparable = uniffi_trait_methods.ord_cmp.is_some() -%}
 {%- let inline_methods = !config.kotlin_multiplatform && (has_methods || has_trait_methods) -%}
 
 {%- if rec.has_fields() %}
@@ -20,7 +21,7 @@
     {%- endmatch -%}
     {% if !loop.last %}, {% endif %}
     {%- endfor %}
-) {% if contains_object_references %}: Disposable {% endif %}{
+) {% if comparable && contains_object_references %}: Disposable, Comparable<{{ type_name }}> {% elif contains_object_references %}: Disposable {% elif comparable %}: Comparable<{{ type_name }}> {% endif %}{
     {%- if should_generate_equals_hash_code -%}
     {%- call kt::generate_equals_hash_code(rec, type_name, 4) -%}{%- endcall %}
     {%- endif -%}

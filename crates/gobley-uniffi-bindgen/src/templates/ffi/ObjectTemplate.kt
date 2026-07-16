@@ -59,6 +59,9 @@
     private val wasDestroyed: kotlinx.atomicfu.AtomicBoolean = kotlinx.atomicfu.atomic(false)
     private val callCounter: kotlinx.atomicfu.AtomicLong = kotlinx.atomicfu.atomic(1L)
 
+    {{ visibility() }}val uniffiIsDestroyed: Boolean
+        get() = wasDestroyed.value
+
     private val lock = kotlinx.atomicfu.locks.ReentrantLock()
 
     private fun <T> synchronized(block: () -> T): T {

@@ -292,6 +292,37 @@ fun main() {
         assert(c.result() == 15.0)
     }
 
+    // ─── Ord trait / compareTo ───
+    println("\nOrd trait (compareTo):")
+    test("UserProfile compareTo (age ordering)") {
+        val u1 = UserProfile("Alice", 25u)
+        val u2 = UserProfile("Bob", 30u)
+        assert(u1 < u2, "Alice (25) should be less than Bob (30)")
+    }
+    test("UserProfile compareTo (same age, name ordering)") {
+        val u1 = UserProfile("Alice", 25u)
+        val u2 = UserProfile("Bob", 25u)
+        assert(u1 < u2, "Alice should be less than Bob when same age")
+    }
+    test("UserProfile compareTo (equal)") {
+        val u1 = UserProfile("Alice", 25u)
+        val u2 = UserProfile("Alice", 25u)
+        assert(u1.compareTo(u2) == 0, "Equal profiles should have compareTo == 0")
+    }
+
+    // ─── uniffiIsDestroyed ───
+    println("\nuniffiIsDestroyed:")
+    test("uniffiIsDestroyed false for new object") {
+        val calc = Calculator(10.0)
+        assert(!calc.uniffiIsDestroyed, "New object should not be destroyed")
+        calc.close()
+    }
+    test("uniffiIsDestroyed true after close") {
+        val calc = Calculator(10.0)
+        calc.close()
+        assert(calc.uniffiIsDestroyed, "Object should be destroyed after close()")
+    }
+
     // ─── Trait: Rust-only ───
     println("\nTrait: Rust-only:")
     test("Logger.log") { getLogger().log("test") }

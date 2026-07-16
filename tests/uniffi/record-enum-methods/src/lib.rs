@@ -27,9 +27,10 @@ impl Point {
     }
 }
 
-// ─── Record with Display trait (uniffi_trait_methods) ───
+// ─── Record with Display/Eq/Hash/Ord traits (uniffi_trait_methods) ───
 
 #[derive(uniffi::Record, Debug)]
+#[uniffi::export(Display, Eq, Hash, Ord)]
 pub struct UserProfile {
     pub name: String,
     pub age: u32,
@@ -38,6 +39,33 @@ pub struct UserProfile {
 impl std::fmt::Display for UserProfile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} (age: {})", self.name, self.age)
+    }
+}
+
+impl PartialEq for UserProfile {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.age == other.age
+    }
+}
+
+impl Eq for UserProfile {}
+
+impl std::hash::Hash for UserProfile {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+        self.age.hash(state);
+    }
+}
+
+impl PartialOrd for UserProfile {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for UserProfile {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.age.cmp(&other.age).then(self.name.cmp(&other.name))
     }
 }
 
