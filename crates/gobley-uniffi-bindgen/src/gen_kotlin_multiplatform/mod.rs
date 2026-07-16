@@ -691,7 +691,7 @@ impl KotlinCodeOracle {
 
     fn ffi_type_label_by_value(&self, ffi_type: &FfiType, ci: &ComponentInterface) -> String {
         match ffi_type {
-            FfiType::RustBuffer(_) => format!("{}ByValue", self.ffi_type_label(ffi_type, ci)),
+            FfiType::RustBuffer(_) => "RustBufferByValue".to_string(),
             FfiType::Struct(name) => format!("{}UniffiByValue", self.ffi_struct_name(name)),
             FfiType::Callback(name) => self.ffi_callback_name(name),
             _ => self.ffi_type_label(ffi_type, ci),
