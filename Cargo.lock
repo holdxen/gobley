@@ -1402,6 +1402,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "gobley-fixture-record-enum-methods"
+version = "0.1.0"
+dependencies = [
+ "uniffi",
+]
+
+[[package]]
 name = "gobley-fixture-set-and-box"
 version = "0.1.0"
 dependencies = [
@@ -1459,7 +1466,7 @@ dependencies = [
 
 [[package]]
 name = "gobley-uniffi-bindgen"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "anyhow",
  "askama 0.16.0",
@@ -1469,6 +1476,7 @@ dependencies = [
  "fs-err 2.11.0",
  "heck 0.5.0",
  "serde",
+ "tempfile",
  "textwrap",
  "toml 1.1.2+spec-1.1.0",
  "uniffi_bindgen",

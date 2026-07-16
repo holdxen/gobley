@@ -98,6 +98,7 @@ impl Direction {
 // ─── Enum with Display trait ───
 
 #[derive(uniffi::Enum, Debug)]
+#[uniffi::export(Display)]
 pub enum Color {
     Red,
     Green,
