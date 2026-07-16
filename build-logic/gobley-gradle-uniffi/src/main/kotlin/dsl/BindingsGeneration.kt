@@ -74,6 +74,12 @@ sealed class BindingsGeneration(internal val project: Project) {
     abstract val generateImmutableRecords: Property<Boolean>
 
     /**
+     * A list of record names that should remain mutable even when
+     * `generateImmutableRecords` is enabled.
+     */
+    abstract val mutableRecords: ListProperty<String>
+
+    /**
      * When `true`, the library checksums are not checked during initialization, making the process
      * slightly faster. This may be problematic when you mix multiple libraries with varying UniFFI
      * versions.

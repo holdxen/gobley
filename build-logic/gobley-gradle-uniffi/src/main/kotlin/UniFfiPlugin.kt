@@ -240,6 +240,7 @@ class UniFfiPlugin : Plugin<Project> {
             packageName.set(bindingsGeneration.packageName)
             cdylibName.set(bindingsGeneration.cdylibName)
             generateImmutableRecords.set(bindingsGeneration.generateImmutableRecords)
+            mutableRecords.set(bindingsGeneration.mutableRecords)
             omitChecksums.set(bindingsGeneration.omitChecksums)
             customTypes.set(bindingsGeneration.customTypes)
             disableJavaCleaner.set(bindingsGeneration.disableJavaCleaner)

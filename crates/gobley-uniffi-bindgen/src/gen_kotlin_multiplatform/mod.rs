@@ -107,6 +107,8 @@ pub struct Config {
     kotlin_targets: Vec<ConfigKotlinTarget>,
     generate_immutable_records: Option<bool>,
     #[serde(default)]
+    mutable_records: HashSet<String>,
+    #[serde(default)]
     omit_checksums: bool,
     #[serde(default)]
     custom_types: HashMap<String, CustomTypeConfig>,
@@ -189,6 +191,12 @@ impl Config {
     /// Whether to generate immutable records (`val` instead of `var`)
     pub fn generate_immutable_records(&self) -> bool {
         self.generate_immutable_records.unwrap_or(false)
+    }
+
+    /// A record is immutable only if `generate_immutable_records` is enabled
+    /// and the record is not listed in `mutable_records`.
+    pub fn is_record_immutable(&self, name: &str) -> bool {
+        self.generate_immutable_records() && !self.mutable_records.contains(name)
     }
 
     fn kotlin_version_is_at_least(&self, major: usize, minor: usize, patch: usize) -> bool {

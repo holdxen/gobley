@@ -64,6 +64,10 @@ abstract class MergeUniffiConfigTask : DefaultTask() {
 
     @get:Input
     @get:Optional
+    abstract val mutableRecords: ListProperty<String>
+
+    @get:Input
+    @get:Optional
     abstract val omitChecksums: Property<Boolean>
 
     @get:Input
@@ -131,6 +135,10 @@ abstract class MergeUniffiConfigTask : DefaultTask() {
             ),
             generateImmutableRecords = originalConfig.generateImmutableRecords
                 ?: generateImmutableRecords.orNull,
+            mutableRecords = mergeSet(
+                originalConfig.mutableRecords,
+                mutableRecords.orNull,
+            ),
             omitChecksums = originalConfig.omitChecksums
                 ?: omitChecksums.orNull,
             customTypes = mergeMap(
