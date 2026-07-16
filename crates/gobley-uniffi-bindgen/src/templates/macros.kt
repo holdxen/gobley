@@ -134,8 +134,7 @@
 {{ " "|repeat(indent) }}@Throws({{ throwable|type_name(ci) }}::class {%- if callable.is_async() -%}, kotlin.coroutines.cancellation.CancellationException::class{%- endif -%})
                         {%-     else -%}
                         {%- endmatch %}
-{{ " "|repeat(indent) }}{{ visibility() }}{%- if callable.is_async() -%}suspend {% endif -%}
-                        fun {{ receiver_type }}.{{ callable.name()|fn_name }}(
+{{ " "|repeat(indent) }}{{ visibility() }}actual {% if callable.is_async() %}suspend {% endif %}fun {{ receiver_type }}.{{ callable.name()|fn_name }}(
                             {%- call arg_list(callable, false) -%}{%- endcall %}
                         )
                         {%- match callable.return_type() -%}
@@ -162,8 +161,7 @@
 {{ " "|repeat(indent) }}@Throws({{ throwable|type_name(ci) }}::class {%- if callable.is_async() -%}, kotlin.coroutines.cancellation.CancellationException::class{%- endif -%})
                         {%-     else -%}
                         {%- endmatch %}
-{{ " "|repeat(indent) }}{{ visibility() }}{%- if callable.is_async() -%}suspend {% endif -%}
-                        fun {{ receiver_type }}.{{ callable.name()|enum_fn_name }}(
+{{ " "|repeat(indent) }}{{ visibility() }}actual {% if callable.is_async() %}suspend {% endif %}fun {{ receiver_type }}.{{ callable.name()|enum_fn_name }}(
                             {%- call arg_list(callable, false) -%}{%- endcall %}
                         )
                         {%- match callable.return_type() -%}
@@ -408,7 +406,7 @@ v{{- field_num -}}
 {%- macro uniffi_trait_impls(type_name, uniffi_trait_methods, indent, use_extension) %}
 {%- if let Some(fmt) = uniffi_trait_methods.display_fmt.or(uniffi_trait_methods.debug_fmt.clone()) %}
 {%- if use_extension %}
-{{ visibility() }}fun {{ type_name }}.toString(): String {
+{{ visibility() }}actual fun {{ type_name }}.toString(): String {
     return {{ fmt.return_type().unwrap()|lift_fn }}({% call to_ffi_call(fmt, 4) %}{% endcall %})
 }
 {%- else %}
@@ -419,7 +417,7 @@ v{{- field_num -}}
 {%- endif %}
 {%- if let Some(eq) = uniffi_trait_methods.eq_eq %}
 {%- if use_extension %}
-{{ visibility() }}fun {{ type_name }}.equals(other: Any?): Boolean {
+{{ visibility() }}actual fun {{ type_name }}.equals(other: Any?): Boolean {
     if (this === other) return true
     if (other !is {{ type_name }}) return false
     return {{ eq.return_type().unwrap()|lift_fn }}({% call to_ffi_call(eq, 4) %}{% endcall %})
@@ -434,7 +432,7 @@ v{{- field_num -}}
 {%- endif %}
 {%- if let Some(hash) = uniffi_trait_methods.hash_hash %}
 {%- if use_extension %}
-{{ visibility() }}fun {{ type_name }}.hashCode(): Int {
+{{ visibility() }}actual fun {{ type_name }}.hashCode(): Int {
     return {{ hash.return_type().unwrap()|lift_fn }}({%- call to_ffi_call(hash, 4) %}{% endcall %}).toInt()
 }
 {%- else %}
@@ -445,7 +443,7 @@ v{{- field_num -}}
 {%- endif %}
 {%- if let Some(cmp) = uniffi_trait_methods.ord_cmp %}
 {%- if use_extension %}
-{{ visibility() }}operator fun {{ type_name }}.compareTo(other: {{ type_name }}): Int {
+{{ visibility() }}actual operator fun {{ type_name }}.compareTo(other: {{ type_name }}): Int {
     return {{ cmp.return_type().unwrap()|lift_fn }}({%- call to_ffi_call(cmp, 4) %}{% endcall %}).toInt()
 }
 {%- else %}
@@ -453,5 +451,87 @@ v{{- field_num -}}
 {{ " "|repeat(indent) }}    return {{ cmp.return_type().unwrap()|lift_fn }}({%- call to_ffi_call(cmp, indent + 4) %}{% endcall %}).toInt()
 {{ " "|repeat(indent) }}}
 {%- endif %}
+{%- endif %}
+{%- endmacro %}
+
+{#- Expect declaration macros for KMP commonMain (Record/Enum methods) -#}
+{%- macro func_extension_decl(receiver_type, callable, indent) %}
+                        {%- call docstring(callable, indent) -%}{%- endcall %}
+{{ " "|repeat(indent) }}{{ visibility() }}expect {% if callable.is_async() %}suspend {% endif %}fun {{ receiver_type }}.{{ callable.name()|fn_name }}(
+                            {%- call arg_list(callable, false) -%}{%- endcall %}
+                        )
+                        {%- match callable.return_type() -%}
+                        {%-     when Some(return_type) %}: {{ return_type|type_name(ci) -}}
+                        {%-     else %}
+                        {%- endmatch %}
+{% endmacro %}
+
+{%- macro func_extension_decl_enum(receiver_type, callable, indent) %}
+                        {%- call docstring(callable, indent) -%}{%- endcall %}
+{{ " "|repeat(indent) }}{{ visibility() }}expect {% if callable.is_async() %}suspend {% endif %}fun {{ receiver_type }}.{{ callable.name()|enum_fn_name }}(
+                            {%- call arg_list(callable, false) -%}{%- endcall %}
+                        )
+                        {%- match callable.return_type() -%}
+                        {%-     when Some(return_type) %}: {{ return_type|type_name(ci) -}}
+                        {%-     else %}
+                        {%- endmatch %}
+{% endmacro %}
+
+{#- Expect declarations for uniffi trait methods (Display/Eq/Hash/Ord) -#}
+{%- macro uniffi_trait_decl(type_name, uniffi_trait_methods) %}
+{%- if uniffi_trait_methods.display_fmt.is_some() || uniffi_trait_methods.debug_fmt.is_some() %}
+{{ visibility() }}expect fun {{ type_name }}.toString(): String
+{%- endif %}
+{%- if uniffi_trait_methods.eq_eq.is_some() %}
+{{ visibility() }}expect fun {{ type_name }}.equals(other: Any?): Boolean
+{%- endif %}
+{%- if uniffi_trait_methods.hash_hash.is_some() %}
+{{ visibility() }}expect fun {{ type_name }}.hashCode(): Int
+{%- endif %}
+{%- if uniffi_trait_methods.ord_cmp.is_some() %}
+{{ visibility() }}expect operator fun {{ type_name }}.compareTo(other: {{ type_name }}): Int
+{%- endif %}
+{%- endmacro %}
+
+{#- Actual stub macros for unsupported platforms (Record/Enum methods) -#}
+{%- macro func_extension_stub(receiver_type, callable, indent) %}
+                        {%- call docstring(callable, indent) %}{% endcall %}
+{{ " "|repeat(indent) }}{{ visibility() }}actual {% if callable.is_async() %}suspend {% endif %}fun {{ receiver_type }}.{{ callable.name()|fn_name }}(
+                            {%- call arg_list(callable, false) -%}{%- endcall %}
+                        )
+                        {%- match callable.return_type() -%}
+                        {%-     when Some(return_type) %}: {{ return_type|type_name(ci) -}}
+                        {%-     else %}
+                        {%- endmatch %} {
+{{ " "|repeat(indent) }}    TODO()
+{{ " "|repeat(indent) }}{{ '}' }}
+{% endmacro %}
+
+{%- macro func_extension_stub_enum(receiver_type, callable, indent) %}
+                        {%- call docstring(callable, indent) %}{% endcall %}
+{{ " "|repeat(indent) }}{{ visibility() }}actual {% if callable.is_async() %}suspend {% endif %}fun {{ receiver_type }}.{{ callable.name()|enum_fn_name }}(
+                            {%- call arg_list(callable, false) -%}{%- endcall %}
+                        )
+                        {%- match callable.return_type() -%}
+                        {%-     when Some(return_type) %}: {{ return_type|type_name(ci) -}}
+                        {%-     else %}
+                        {%- endmatch %} {
+{{ " "|repeat(indent) }}    TODO()
+{{ " "|repeat(indent) }}{{ '}' }}
+{% endmacro %}
+
+{#- Actual stubs for uniffi trait methods -#}
+{%- macro uniffi_trait_impls_stub(type_name, uniffi_trait_methods) %}
+{%- if uniffi_trait_methods.display_fmt.is_some() || uniffi_trait_methods.debug_fmt.is_some() %}
+{{ visibility() }}actual fun {{ type_name }}.toString(): String = TODO()
+{%- endif %}
+{%- if uniffi_trait_methods.eq_eq.is_some() %}
+{{ visibility() }}actual fun {{ type_name }}.equals(other: Any?): Boolean = TODO()
+{%- endif %}
+{%- if uniffi_trait_methods.hash_hash.is_some() %}
+{{ visibility() }}actual fun {{ type_name }}.hashCode(): Int = TODO()
+{%- endif %}
+{%- if uniffi_trait_methods.ord_cmp.is_some() %}
+{{ visibility() }}actual operator fun {{ type_name }}.compareTo(other: {{ type_name }}): Int = TODO()
 {%- endif %}
 {%- endmacro %}

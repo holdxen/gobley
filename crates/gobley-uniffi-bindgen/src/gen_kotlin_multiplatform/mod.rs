@@ -1092,7 +1092,7 @@ mod filters {
 
     #[askama::filter_fn]
     pub(super) fn need_non_null_assertion(
-        type_: &FfiType,
+        _: &FfiType,
         _: &dyn askama::Values,
     ) -> Result<bool, askama::Error> {
         // Handle is Long which is non-null in Kotlin, no assertion needed

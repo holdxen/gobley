@@ -11,6 +11,10 @@
 {%- let uniffi_trait_methods = e.uniffi_trait_methods() -%}
 {%- let has_trait_methods = uniffi_trait_methods.display_fmt.is_some() || uniffi_trait_methods.debug_fmt.is_some() || uniffi_trait_methods.eq_eq.is_some() || uniffi_trait_methods.hash_hash.is_some() || uniffi_trait_methods.ord_cmp.is_some() -%}
 {%- let inline_methods = !config.kotlin_multiplatform && (has_methods || has_trait_methods) -%}
+{%- let has_display = uniffi_trait_methods.display_fmt.is_some() || uniffi_trait_methods.debug_fmt.is_some() -%}
+{%- let has_eq = uniffi_trait_methods.eq_eq.is_some() -%}
+{%- let has_hash = uniffi_trait_methods.hash_hash.is_some() -%}
+{%- let has_cmp = uniffi_trait_methods.ord_cmp.is_some() -%}
 
 {%- if e.is_flat() %}
 
@@ -102,3 +106,21 @@
 }
 
 {% endif %}
+
+{%- if config.kotlin_multiplatform && (has_methods || has_trait_methods) %}
+{%- for meth in e.methods() %}
+{%- call kt::func_extension_decl_enum(type_name, meth, 0) -%}{%- endcall %}
+{%- endfor %}
+{%- if has_display %}
+{{ visibility() }}expect fun {{ type_name }}.toString(): String
+{%- endif %}
+{%- if has_eq %}
+{{ visibility() }}expect fun {{ type_name }}.equals(other: Any?): Boolean
+{%- endif %}
+{%- if has_hash %}
+{{ visibility() }}expect fun {{ type_name }}.hashCode(): Int
+{%- endif %}
+{%- if has_cmp %}
+{{ visibility() }}expect operator fun {{ type_name }}.compareTo(other: {{ type_name }}): Int
+{%- endif %}
+{%- endif %}
